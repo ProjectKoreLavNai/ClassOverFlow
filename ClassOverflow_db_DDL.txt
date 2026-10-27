@@ -1,0 +1,391 @@
+-- ============================================================================
+-- 1. CORE USER & ROLE TABLES
+-- ============================================================================
+
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('STUDENT', 'TEACHER', 'ADMIN')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE students (
+    student_id INT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(150) NOT NULL UNIQUE CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
+    phone VARCHAR(20),
+    -- Security: Enforce Bcrypt/Argon2 hash storage (never plaintext)
+    password_hash VARCHAR(255) NOT NULL CHECK (char_length(password_hash) >= 50),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    cr_status BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE teachers (
+    teacher_id INT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(150) NOT NULL UNIQUE CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
+    phone VARCHAR(20),
+    password_hash VARCHAR(255) NOT NULL CHECK (char_length(password_hash) >= 50),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE admins (
+    admin_id INT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+    full_name VARCHAR(100) NOT NULL,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    email VARCHAR(150) NOT NULL UNIQUE CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
+    password_hash VARCHAR(255) NOT NULL CHECK (char_length(password_hash) >= 50),
+    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE user_platforms (
+    platform_id SERIAL PRIMARY KEY,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    platform_name VARCHAR(50) NOT NULL CHECK (platform_name IN ('DISCORD', 'MESSENGER', 'EMAIL')),
+    destination_id VARCHAR(255) NOT NULL,
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_student_platform UNIQUE (student_id, platform_name)
+);
+
+-- ============================================================================
+-- 2. COURSES & ENROLLMENTS
+-- ============================================================================
+
+CREATE TABLE courses (
+    course_id SERIAL PRIMARY KEY,
+    teacher_id INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE RESTRICT,
+    course_name VARCHAR(150) NOT NULL,
+    course_code VARCHAR(30) NOT NULL,
+    -- Expanded to VARCHAR(255) so Bcrypt (60 chars) / Argon2 (95+ chars) hashes fit
+    class_code_hash VARCHAR(255) NOT NULL UNIQUE CHECK (char_length(class_code_hash) >= 50),
+    description TEXT,
+    syllabus TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE enrollments (
+    enrollment_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    enrolled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_course_student UNIQUE (course_id, student_id)
+);
+
+-- ============================================================================
+-- 3. ANNOUNCEMENTS, COMMENTS & NOTIFICATION QUEUE
+-- ============================================================================
+
+CREATE TABLE announcements (
+    announcement_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    posted_by INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE announcement_comments (
+    comment_id SERIAL PRIMARY KEY,
+    announcement_id INT NOT NULL REFERENCES announcements(announcement_id) ON DELETE CASCADE,
+    user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    comment_text TEXT NOT NULL CHECK (char_length(trim(comment_text)) > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE notification_queue (
+    notification_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    triggered_by_user INT REFERENCES users(user_id) ON DELETE SET NULL,
+    event_type VARCHAR(30) NOT NULL CHECK (event_type IN ('ANNOUNCEMENT', 'SCHEDULE_UPDATE', 'DEADLINE_ALERT')),
+    reference_id INT,
+    message_payload TEXT NOT NULL,
+    target_platform VARCHAR(50) NOT NULL CHECK (target_platform IN ('DISCORD', 'MESSENGER', 'EMAIL')),
+    destination_id VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'SENT', 'FAILED', 'RETRYING')),
+    retry_count INT NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
+    next_retry_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_notification_event_dest UNIQUE (event_type, reference_id, destination_id)
+);
+
+-- ============================================================================
+-- 4. TOPICS, LECTURE PLANS & CLASS MATERIALS
+-- ============================================================================
+
+CREATE TABLE topics (
+    topic_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    topic_name VARCHAR(200) NOT NULL,
+    description TEXT,
+    sequence_no INT NOT NULL CHECK (sequence_no > 0),
+    weightage_pct DECIMAL(5,2) DEFAULT 10.00 CHECK (weightage_pct >= 0 AND weightage_pct <= 100),
+    is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    completed_at TIMESTAMPTZ,
+    CONSTRAINT uq_course_topic_seq UNIQUE (course_id, sequence_no),
+    CONSTRAINT chk_topic_completion_time CHECK (
+        (is_completed = TRUE AND completed_at IS NOT NULL) OR
+        (is_completed = FALSE AND completed_at IS NULL)
+    )
+);
+
+CREATE TABLE lecture_plans (
+    plan_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    topic_id INT REFERENCES topics(topic_id) ON DELETE SET NULL,
+    created_by INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+    lecture_date DATE,
+    learning_objectives TEXT,
+    subtopics TEXT,
+    activities TEXT,
+    plan_status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (plan_status IN ('DRAFT', 'PUBLISHED', 'ARCHIVED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE class_materials (
+    material_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    topic_id INT REFERENCES topics(topic_id) ON DELETE SET NULL,
+    posted_by INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 5. ASSIGNMENTS, SUBMISSIONS, FILES & LECTURE NOTES
+-- ============================================================================
+
+CREATE TABLE assignments (
+    assignment_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    deadline TIMESTAMPTZ,
+    total_marks DECIMAL(7,2) NOT NULL DEFAULT 100.00 CHECK (total_marks > 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    edited_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE submissions (
+    submission_id SERIAL PRIMARY KEY,
+    assignment_id INT NOT NULL REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    attempt_number INT NOT NULL DEFAULT 1 CHECK (attempt_number > 0),
+    status VARCHAR(20) NOT NULL DEFAULT 'SUBMITTED' CHECK (status IN ('SUBMITTED', 'UNSUBMITTED', 'GRADED')),
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    unsubmitted_at TIMESTAMPTZ,
+    marks_obtained DECIMAL(7,2) CHECK (marks_obtained >= 0),
+    feedback TEXT,
+    CONSTRAINT uq_assignment_student_attempt UNIQUE (assignment_id, student_id, attempt_number),
+    -- Prevent unsubmitting an already graded submission & require unsubmitted_at timestamp when UNSUBMITTED
+    CONSTRAINT chk_submission_lifecycle CHECK (
+        (status = 'UNSUBMITTED' AND unsubmitted_at IS NOT NULL AND marks_obtained IS NULL) OR
+        (status = 'SUBMITTED' AND marks_obtained IS NULL) OR
+        (status = 'GRADED' AND marks_obtained IS NOT NULL)
+    )
+);
+
+CREATE TABLE files (
+    file_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    category VARCHAR(30) NOT NULL CHECK (
+        category IN (
+            'Assignment_attachment',
+            'Assignment_submission',
+            'Announcement_attachment',
+            'Class_material'
+        )
+    ),
+    announcement_id INT REFERENCES announcements(announcement_id) ON DELETE CASCADE,
+    assignment_id INT REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+    submission_id INT REFERENCES submissions(submission_id) ON DELETE CASCADE,
+    material_id INT REFERENCES class_materials(material_id) ON DELETE CASCADE,
+    uploaded_by_student INT REFERENCES students(student_id) ON DELETE SET NULL,
+    uploaded_by_teacher INT REFERENCES teachers(teacher_id) ON DELETE SET NULL,
+    file_name VARCHAR(255) NOT NULL,
+    storage_bucket VARCHAR(100) NOT NULL DEFAULT 'private-course-files',
+    storage_url TEXT NOT NULL,
+    mime_type VARCHAR(100) NOT NULL CHECK (
+        mime_type IN (
+            'application/pdf',
+            'image/jpeg',
+            'image/png',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'application/zip'
+        )
+    ),
+    file_size BIGINT NOT NULL CHECK (file_size > 0 AND file_size <= 26214400), -- Max 25MB
+    is_private BOOLEAN NOT NULL DEFAULT TRUE,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- 1. Exactly one uploader (either student or teacher)
+    CONSTRAINT chk_single_uploader CHECK (
+        (uploaded_by_student IS NOT NULL AND uploaded_by_teacher IS NULL) OR
+        (uploaded_by_student IS NULL AND uploaded_by_teacher IS NOT NULL)
+    ),
+    -- 2. Strict Category-to-Parent & Uploader Integrity
+    CONSTRAINT chk_file_category_integrity CHECK (
+        (category = 'Assignment_attachment'
+            AND assignment_id IS NOT NULL AND announcement_id IS NULL AND submission_id IS NULL AND material_id IS NULL
+            AND uploaded_by_teacher IS NOT NULL)
+        OR
+        (category = 'Assignment_submission'
+            AND submission_id IS NOT NULL AND assignment_id IS NULL AND announcement_id IS NULL AND material_id IS NULL
+            AND uploaded_by_student IS NOT NULL)
+        OR
+        (category = 'Announcement_attachment'
+            AND announcement_id IS NOT NULL AND assignment_id IS NULL AND submission_id IS NULL AND material_id IS NULL
+            AND uploaded_by_teacher IS NOT NULL)
+        OR
+        (category = 'Class_material'
+            AND material_id IS NOT NULL AND announcement_id IS NULL AND assignment_id IS NULL AND submission_id IS NULL
+            AND uploaded_by_teacher IS NOT NULL)
+    )
+);
+
+CREATE TABLE lecture_notes (
+    note_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    topic_id INT REFERENCES topics(topic_id) ON DELETE CASCADE,
+    source_file_id INT REFERENCES files(file_id) ON DELETE SET NULL,
+    created_by INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    summary_text TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 6. QUIZZES, QUESTIONS & QUIZ ATTEMPTS
+-- ============================================================================
+
+CREATE TABLE quizzes (
+    quiz_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    created_by INT NOT NULL REFERENCES teachers(teacher_id) ON DELETE CASCADE,
+    title VARCHAR(200) NOT NULL,
+    topic_id INT REFERENCES topics(topic_id) ON DELETE SET NULL,
+    total_marks DECIMAL(7,2) NOT NULL CHECK (total_marks > 0),
+    duration_minutes INT CHECK (duration_minutes > 0),
+    start_time TIMESTAMPTZ,
+    end_time TIMESTAMPTZ,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'PUBLISHED', 'CLOSED')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_quiz_window CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time)
+);
+
+CREATE TABLE questions (
+    question_id SERIAL PRIMARY KEY,
+    quiz_id INT NOT NULL REFERENCES quizzes(quiz_id) ON DELETE CASCADE,
+    question_text TEXT NOT NULL,
+    option_a TEXT NOT NULL,
+    option_b TEXT NOT NULL,
+    option_c TEXT NOT NULL,
+    option_d TEXT NOT NULL,
+    correct_option CHAR(1) NOT NULL CHECK (correct_option IN ('A', 'B', 'C', 'D')),
+    marks DECIMAL(7,2) NOT NULL DEFAULT 1.00 CHECK (marks > 0)
+);
+
+CREATE TABLE quiz_attempts (
+    attempt_id SERIAL PRIMARY KEY,
+    quiz_id INT NOT NULL REFERENCES quizzes(quiz_id) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    score DECIMAL(7,2) CHECK (score >= 0),
+    answers JSONB,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    submitted_at TIMESTAMPTZ,
+    CONSTRAINT uq_quiz_student_attempt UNIQUE (quiz_id, student_id),
+    CONSTRAINT chk_attempt_timestamps CHECK (submitted_at IS NULL OR submitted_at >= started_at)
+);
+
+-- ============================================================================
+-- 7. ATTENDANCE, MARKS, SCHEDULES, DEADLINE NOTICES & AUDIT LOGS
+-- ============================================================================
+
+CREATE TABLE attendance_sessions (
+    session_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    session_date DATE NOT NULL,
+    topic_id INT REFERENCES topics(topic_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE attendance_records (
+    attendance_id SERIAL PRIMARY KEY,
+    session_id INT NOT NULL REFERENCES attendance_sessions(session_id) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    status VARCHAR(10) NOT NULL DEFAULT 'PRESENT' CHECK (status IN ('PRESENT', 'ABSENT')),
+    CONSTRAINT uq_session_student UNIQUE (session_id, student_id)
+);
+
+CREATE TABLE marks (
+    mark_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    assessment_name VARCHAR(150) NOT NULL,
+    marks_obtained DECIMAL(7,2) NOT NULL CHECK (marks_obtained >= 0),
+    total_marks DECIMAL(7,2) NOT NULL CHECK (total_marks > 0),
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_marks_bounds CHECK (marks_obtained <= total_marks)
+);
+
+CREATE TABLE class_schedules (
+    schedule_id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(course_id) ON DELETE CASCADE,
+    updated_by_user INT REFERENCES users(user_id) ON DELETE SET NULL,
+    class_date DATE NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    room VARCHAR(100),
+    notes TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_schedule_time_order CHECK (end_time > start_time)
+);
+
+CREATE TABLE deadline_notices (
+    deadline_id SERIAL PRIMARY KEY,
+    assignment_id INT NOT NULL REFERENCES assignments(assignment_id) ON DELETE CASCADE,
+    posted_by INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+    alert_note TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE audit_logs (
+    audit_id BIGSERIAL PRIMARY KEY,
+    actor_user_id INT REFERENCES users(user_id) ON DELETE SET NULL,
+    action_type VARCHAR(50) NOT NULL CHECK (
+        action_type IN (
+            'ROLE_CHANGE',
+            'ACCOUNT_VERIFICATION',
+            'CR_STATUS_CHANGE',
+            'MARKS_INSERT',
+            'MARKS_UPDATE',
+            'MARKS_DELETE',
+            'COURSE_DELETE'
+        )
+    ),
+    target_table VARCHAR(50) NOT NULL,
+    target_record_id INT NOT NULL,
+    old_values JSONB,
+    new_values JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 8. PERFORMANCE INDEXES
+-- ============================================================================
+
+CREATE INDEX idx_enrollments_student ON enrollments(student_id);
+CREATE INDEX idx_announcements_course_created ON announcements(course_id, created_at DESC);
+CREATE INDEX idx_assignments_course_deadline ON assignments(course_id, deadline);
+CREATE INDEX idx_files_course_category ON files(course_id, category);
+CREATE INDEX idx_files_announcement ON files(announcement_id) WHERE announcement_id IS NOT NULL;
+CREATE INDEX idx_files_assignment ON files(assignment_id) WHERE assignment_id IS NOT NULL;
+CREATE INDEX idx_files_submission ON files(submission_id) WHERE submission_id IS NOT NULL;
+CREATE INDEX idx_files_material ON files(material_id) WHERE material_id IS NOT NULL;
+CREATE INDEX idx_marks_course_student ON marks(course_id, student_id);
+CREATE INDEX idx_attendance_session_student ON attendance_records(session_id, student_id);
+CREATE INDEX idx_notification_queue_polling ON notification_queue(status, next_retry_at) WHERE status IN ('PENDING', 'RETRYING');

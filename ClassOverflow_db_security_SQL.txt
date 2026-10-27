@@ -1,0 +1,1089 @@
+-- ============================================================================
+-- 1. LEAST-PRIVILEGE DATABASE ACCOUNTS & PERMISSIONS
+-- ============================================================================
+
+DO $$
+BEGIN
+    -- Administrative / migration role (not used by FastAPI runtime)
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'classoverflow_admin') THEN
+        CREATE ROLE classoverflow_admin NOLOGIN;
+    END IF;
+
+    -- FastAPI runtime application role: NO superuser, NO createdb, NO createrole, NO bypassrls
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'classoverflow_app') THEN
+        CREATE ROLE classoverflow_app LOGIN PASSWORD 'REPLACE_WITH_STRONG_ENV_SECRET'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+    END IF;
+
+    -- Safely grant CONNECT using dynamic identifier formatting (prevents syntax error 42601)
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO classoverflow_app;', current_database());
+END
+$$;
+
+-- Grant least-privilege CRUD access on public schema to FastAPI role
+GRANT USAGE ON SCHEMA public TO classoverflow_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO classoverflow_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO classoverflow_app;
+
+-- Ensure future tables/sequences created in public also receive least-privilege CRUD
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO classoverflow_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO classoverflow_app;
+
+-- CRITICAL SECURITY MEASURE: Audit logs are strictly append-only (cannot alter or erase history)
+REVOKE UPDATE, DELETE, TRUNCATE ON TABLE audit_logs FROM classoverflow_app;
+
+-- ============================================================================
+-- 2. SESSION CONTEXT HELPER FUNCTIONS (PARAMETERIZED FASTAPI CONTEXT)
+-- ============================================================================
+-- FastAPI runs this parameterized query at the start of every transaction:
+-- SELECT set_config('app.current_user_id', :uid, true),
+--        set_config('app.current_user_role', :role, true);
+
+CREATE OR REPLACE FUNCTION current_app_user_id() RETURNS INT AS $$
+    SELECT NULLIF(current_setting('app.current_user_id', true), '')::INT;
+$$ LANGUAGE SQL STABLE;
+
+CREATE OR REPLACE FUNCTION current_app_user_role() RETURNS VARCHAR AS $$
+    SELECT NULLIF(current_setting('app.current_user_role', true), '')::VARCHAR;
+$$ LANGUAGE SQL STABLE;
+
+-- These SECURITY DEFINER helpers avoid recursive RLS when course and enrollment
+-- policies need to check each other's rows. Apply this script as the table owner.
+CREATE OR REPLACE FUNCTION public.app_current_user_teaches_course(p_course_id INT)
+RETURNS BOOLEAN
+LANGUAGE SQL STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.courses c
+        WHERE c.course_id = p_course_id
+          AND c.teacher_id = public.current_app_user_id()
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.app_current_user_enrolled_in_course(p_course_id INT)
+RETURNS BOOLEAN
+LANGUAGE SQL STABLE SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.enrollments e
+        WHERE e.course_id = p_course_id
+          AND e.student_id = public.current_app_user_id()
+    );
+$$;
+
+REVOKE ALL ON FUNCTION public.app_current_user_teaches_course(INT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.app_current_user_enrolled_in_course(INT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.app_current_user_teaches_course(INT) TO classoverflow_app;
+GRANT EXECUTE ON FUNCTION public.app_current_user_enrolled_in_course(INT) TO classoverflow_app;
+
+-- ============================================================================
+-- 3. ENABLE ROW-LEVEL SECURITY (RLS) ACROSS ALL 23 TABLES
+-- ============================================================================
+
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teachers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_platforms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE announcement_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_queue ENABLE ROW LEVEL SECURITY;
+ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE topics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lecture_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lecture_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_materials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE marks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE deadline_notices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- ============================================================================
+-- 4. ROW-LEVEL SECURITY (RLS) POLICIES (ALIGNED WITH ACCESS CONTROL MATRIX)
+-- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- A. USERS, PROFILES & STREAMING PLATFORMS
+-- ACM: Users view/manage own profile; Admin views all, verifies accounts, changes roles, deletes accounts
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS users_select_policy ON users;
+CREATE POLICY users_select_policy ON users FOR SELECT
+    USING (current_app_user_role() = 'ADMIN' OR user_id = current_app_user_id());
+
+DROP POLICY IF EXISTS users_admin_manage_policy ON users;
+CREATE POLICY users_admin_manage_policy ON users FOR ALL
+    USING (current_app_user_role() = 'ADMIN')
+    WITH CHECK (current_app_user_role() = 'ADMIN');
+
+DROP POLICY IF EXISTS students_select_policy ON students;
+CREATE POLICY students_select_policy ON students FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR student_id = current_app_user_id()
+        OR current_app_user_role() = 'TEACHER'
+    );
+
+DROP POLICY IF EXISTS students_update_own_policy ON students;
+CREATE POLICY students_update_own_policy ON students FOR UPDATE
+    USING (student_id = current_app_user_id() OR current_app_user_role() = 'ADMIN')
+    WITH CHECK (
+        current_app_user_role() = 'ADMIN'
+        OR (
+            student_id = current_app_user_id()
+            -- Prevent students from self-elevating cr_status or is_verified!
+            AND cr_status = (SELECT s.cr_status FROM students s WHERE s.student_id = current_app_user_id())
+            AND is_verified = (SELECT s.is_verified FROM students s WHERE s.student_id = current_app_user_id())
+        )
+    );
+
+DROP POLICY IF EXISTS students_admin_insert_delete_policy ON students;
+CREATE POLICY students_admin_insert_delete_policy ON students FOR ALL
+    USING (current_app_user_role() = 'ADMIN')
+    WITH CHECK (current_app_user_role() = 'ADMIN');
+
+DROP POLICY IF EXISTS teachers_select_policy ON teachers;
+CREATE POLICY teachers_select_policy ON teachers FOR SELECT
+    USING (current_app_user_id() IS NOT NULL);
+
+DROP POLICY IF EXISTS teachers_update_own_policy ON teachers;
+CREATE POLICY teachers_update_own_policy ON teachers FOR UPDATE
+    USING (teacher_id = current_app_user_id() OR current_app_user_role() = 'ADMIN')
+    WITH CHECK (
+        current_app_user_role() = 'ADMIN'
+        OR (
+            teacher_id = current_app_user_id()
+            -- Prevent teachers from self-verifying their own account
+            AND is_verified = (SELECT t.is_verified FROM teachers t WHERE t.teacher_id = current_app_user_id())
+        )
+    );
+
+DROP POLICY IF EXISTS teachers_admin_manage_policy ON teachers;
+CREATE POLICY teachers_admin_manage_policy ON teachers FOR ALL
+    USING (current_app_user_role() = 'ADMIN')
+    WITH CHECK (current_app_user_role() = 'ADMIN');
+
+DROP POLICY IF EXISTS admins_rls_policy ON admins;
+CREATE POLICY admins_rls_policy ON admins FOR ALL
+    USING (current_app_user_role() = 'ADMIN')
+    WITH CHECK (current_app_user_role() = 'ADMIN');
+
+-- Streaming platforms: Students/CRs manage own settings; Teachers/Admins can view status
+DROP POLICY IF EXISTS user_platforms_select_policy ON user_platforms;
+CREATE POLICY user_platforms_select_policy ON user_platforms FOR SELECT
+    USING (
+        student_id = current_app_user_id()
+        OR current_app_user_role() IN ('TEACHER', 'ADMIN')
+    );
+
+DROP POLICY IF EXISTS user_platforms_write_policy ON user_platforms;
+CREATE POLICY user_platforms_write_policy ON user_platforms FOR ALL
+    USING (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id())
+    WITH CHECK (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id());
+
+-- ----------------------------------------------------------------------------
+-- B. COURSES & ENROLLMENTS
+-- ACM: Enrolled students view; Assigned Teacher creates/modifies own; Admin views/modifies/deletes all
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS courses_select_policy ON courses;
+CREATE POLICY courses_select_policy ON courses FOR SELECT
+    USING (
+        public.current_app_user_role() = 'ADMIN'
+        OR public.app_current_user_teaches_course(course_id)
+        OR public.app_current_user_enrolled_in_course(course_id)
+    );
+
+DROP POLICY IF EXISTS courses_insert_policy ON courses;
+CREATE POLICY courses_insert_policy ON courses FOR INSERT
+    WITH CHECK (
+        current_app_user_role() = 'ADMIN'
+        OR (current_app_user_role() = 'TEACHER' AND teacher_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS courses_update_policy ON courses;
+CREATE POLICY courses_update_policy ON courses FOR UPDATE
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR (current_app_user_role() = 'TEACHER' AND teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'ADMIN'
+        OR (current_app_user_role() = 'TEACHER' AND teacher_id = current_app_user_id())
+    );
+
+-- ACM: Delete Course is strictly restricted to ADMIN
+DROP POLICY IF EXISTS courses_delete_policy ON courses;
+CREATE POLICY courses_delete_policy ON courses FOR DELETE
+    USING (current_app_user_role() = 'ADMIN');
+
+DROP POLICY IF EXISTS enrollments_select_policy ON enrollments;
+CREATE POLICY enrollments_select_policy ON enrollments FOR SELECT
+    USING (
+        public.current_app_user_role() = 'ADMIN'
+        OR student_id = public.current_app_user_id()
+        OR public.app_current_user_teaches_course(course_id)
+    );
+
+DROP POLICY IF EXISTS enrollments_insert_policy ON enrollments;
+CREATE POLICY enrollments_insert_policy ON enrollments FOR INSERT
+    WITH CHECK (
+        (public.current_app_user_role() = 'STUDENT' AND student_id = public.current_app_user_id())
+        OR (
+            public.current_app_user_role() = 'TEACHER'
+            AND public.app_current_user_teaches_course(course_id)
+        )
+    );
+
+-- ----------------------------------------------------------------------------
+-- C. ANNOUNCEMENTS, COMMENTS & NOTIFICATION QUEUE
+-- ACM: Teacher posts/edits announcements; Enrolled students & Teacher comment; Admin views
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS announcements_select_policy ON announcements;
+CREATE POLICY announcements_select_policy ON announcements FOR SELECT
+    USING (
+        public.app_current_user_teaches_course(course_id)
+        OR public.app_current_user_enrolled_in_course(course_id)
+    );
+
+DROP POLICY IF EXISTS announcements_teacher_write_policy ON announcements;
+CREATE POLICY announcements_teacher_write_policy ON announcements FOR ALL
+    USING (
+        public.current_app_user_role() = 'TEACHER'
+        AND posted_by = public.current_app_user_id()
+        AND public.app_current_user_teaches_course(course_id)
+    )
+    WITH CHECK (
+        public.current_app_user_role() = 'TEACHER'
+        AND posted_by = public.current_app_user_id()
+        AND public.app_current_user_teaches_course(course_id)
+    );
+
+DROP POLICY IF EXISTS comments_select_policy ON announcement_comments;
+CREATE POLICY comments_select_policy ON announcement_comments FOR SELECT
+    USING (
+        current_app_user_role() <> 'ADMIN'
+        AND EXISTS (
+            SELECT 1 FROM public.announcements a
+            WHERE a.announcement_id = announcement_comments.announcement_id
+              AND (
+                  public.app_current_user_teaches_course(a.course_id)
+                  OR public.app_current_user_enrolled_in_course(a.course_id)
+              )
+        )
+    );
+
+DROP POLICY IF EXISTS comments_insert_policy ON announcement_comments;
+CREATE POLICY comments_insert_policy ON announcement_comments FOR INSERT
+    WITH CHECK (
+        user_id = current_app_user_id()
+        AND (
+            EXISTS (
+                SELECT 1 FROM announcements a
+                JOIN courses c ON c.course_id = a.course_id
+                WHERE a.announcement_id = announcement_comments.announcement_id
+                  AND c.teacher_id = current_app_user_id()
+            )
+            OR EXISTS (
+                SELECT 1 FROM announcements a
+                JOIN enrollments e ON e.course_id = a.course_id
+                WHERE a.announcement_id = announcement_comments.announcement_id
+                  AND e.student_id = current_app_user_id()
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS comments_delete_policy ON announcement_comments;
+CREATE POLICY comments_delete_policy ON announcement_comments FOR DELETE
+    USING (
+        user_id = current_app_user_id()
+        OR EXISTS (
+            SELECT 1 FROM announcements a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.announcement_id = announcement_comments.announcement_id
+              AND c.teacher_id = current_app_user_id()
+        )
+    );
+
+-- Notification Queue: Accessible by Admin, Course Teacher, or Enrolled CR triggering schedule/deadline alerts
+DROP POLICY IF EXISTS notification_queue_rls_policy ON notification_queue;
+CREATE POLICY notification_queue_rls_policy ON notification_queue FOR ALL
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (
+            SELECT 1 FROM courses c
+            WHERE c.course_id = notification_queue.course_id AND c.teacher_id = current_app_user_id()
+        )
+        OR (
+            current_app_user_role() = 'STUDENT'
+            AND triggered_by_user = current_app_user_id()
+            AND EXISTS (
+                SELECT 1 FROM enrollments e
+                JOIN students s ON s.student_id = e.student_id
+                WHERE e.course_id = notification_queue.course_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.cr_status = TRUE
+            )
+        )
+    )
+    WITH CHECK (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (
+            SELECT 1 FROM courses c
+            WHERE c.course_id = notification_queue.course_id AND c.teacher_id = current_app_user_id()
+        )
+        OR (
+            current_app_user_role() = 'STUDENT'
+            AND triggered_by_user = current_app_user_id()
+            AND event_type IN ('SCHEDULE_UPDATE', 'DEADLINE_ALERT')
+            AND EXISTS (
+                SELECT 1 FROM enrollments e
+                JOIN students s ON s.student_id = e.student_id
+                WHERE e.course_id = notification_queue.course_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.cr_status = TRUE
+            )
+        )
+    );
+
+-- ----------------------------------------------------------------------------
+-- D. ASSIGNMENTS & SUBMISSIONS (WITH STRICT DEADLINE ENFORCEMENT)
+-- ACM: Teacher creates/edits assignments & grades all course submissions;
+--      Students view/create/update ONLY their own submissions before deadline; Admin views assignments only
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS assignments_select_policy ON assignments;
+CREATE POLICY assignments_select_policy ON assignments FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (
+            SELECT 1 FROM courses c
+            WHERE c.course_id = assignments.course_id AND c.teacher_id = current_app_user_id()
+        )
+        OR EXISTS (
+            SELECT 1 FROM enrollments e
+            WHERE e.course_id = assignments.course_id AND e.student_id = current_app_user_id()
+        )
+    );
+
+DROP POLICY IF EXISTS assignments_teacher_write_policy ON assignments;
+CREATE POLICY assignments_teacher_write_policy ON assignments FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (
+            SELECT 1 FROM courses c
+            WHERE c.course_id = assignments.course_id AND c.teacher_id = current_app_user_id()
+        )
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (
+            SELECT 1 FROM courses c
+            WHERE c.course_id = assignments.course_id AND c.teacher_id = current_app_user_id()
+        )
+    );
+
+-- Submissions: Strict isolation per student (Admin has NO access per ACM)
+DROP POLICY IF EXISTS submissions_select_policy ON submissions;
+CREATE POLICY submissions_select_policy ON submissions FOR SELECT
+    USING (
+        (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id())
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = submissions.assignment_id AND c.teacher_id = current_app_user_id()
+        ))
+    );
+
+-- Student can insert a new submission attempt ONLY before the deadline for an enrolled course
+DROP POLICY IF EXISTS submissions_student_insert_policy ON submissions;
+CREATE POLICY submissions_student_insert_policy ON submissions FOR INSERT
+    WITH CHECK (
+        current_app_user_role() = 'STUDENT'
+        AND student_id = current_app_user_id()
+        AND status = 'SUBMITTED'
+        AND marks_obtained IS NULL
+        AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN enrollments e ON e.course_id = a.course_id
+            WHERE a.assignment_id = submissions.assignment_id
+              AND e.student_id = current_app_user_id()
+              AND (a.deadline IS NULL OR NOW() <= a.deadline)
+        )
+    );
+
+-- Student can unsubmit their own ungraded submission ONLY BEFORE DEADLINE; Teacher can grade at any time
+DROP POLICY IF EXISTS submissions_update_policy ON submissions;
+CREATE POLICY submissions_update_policy ON submissions FOR UPDATE
+    USING (
+        (current_app_user_role() = 'STUDENT'
+            AND student_id = current_app_user_id()
+            AND status = 'SUBMITTED'
+            AND marks_obtained IS NULL
+        )
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = submissions.assignment_id AND c.teacher_id = current_app_user_id()
+        ))
+    )
+    WITH CHECK (
+        (current_app_user_role() = 'STUDENT'
+            AND student_id = current_app_user_id()
+            AND status = 'UNSUBMITTED'
+            AND marks_obtained IS NULL
+            AND EXISTS (
+                SELECT 1 FROM assignments a
+                WHERE a.assignment_id = submissions.assignment_id
+                  AND (a.deadline IS NULL OR NOW() <= a.deadline)
+            )
+        )
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = submissions.assignment_id AND c.teacher_id = current_app_user_id()
+        ))
+    );
+
+-- ----------------------------------------------------------------------------
+-- E. PRIVATE FILES, CLASS MATERIALS, TOPICS, LECTURE PLANS & LECTURE NOTES
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS files_select_policy ON files;
+CREATE POLICY files_select_policy ON files FOR SELECT
+    USING (
+        -- Uploaders can always view their own files
+        uploaded_by_student = current_app_user_id()
+        OR uploaded_by_teacher = current_app_user_id()
+        -- Admin can view course materials/attachments (not private student submissions per ACM)
+        OR (current_app_user_role() = 'ADMIN' AND category <> 'Assignment_submission')
+        -- Assigned Teacher can view all files in their courses (including student submissions)
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = files.course_id AND c.teacher_id = current_app_user_id()
+        ))
+        -- Enrolled Students can view course materials, announcement attachments, and assignment attachments
+        OR (current_app_user_role() = 'STUDENT'
+            AND category IN ('Assignment_attachment', 'Announcement_attachment', 'Class_material')
+            AND EXISTS (
+                SELECT 1 FROM enrollments e WHERE e.course_id = files.course_id AND e.student_id = current_app_user_id()
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS files_insert_policy ON files;
+CREATE POLICY files_insert_policy ON files FOR INSERT
+    WITH CHECK (
+        -- Student uploading a file for their own active submission before deadline
+        (current_app_user_role() = 'STUDENT'
+            AND uploaded_by_student = current_app_user_id()
+            AND category = 'Assignment_submission'
+            AND EXISTS (
+                SELECT 1 FROM submissions s
+                JOIN assignments a ON a.assignment_id = s.assignment_id
+                WHERE s.submission_id = files.submission_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.status = 'SUBMITTED'
+                  AND (a.deadline IS NULL OR NOW() <= a.deadline)
+            )
+        )
+        -- Teacher uploading course materials or attachments for their own course
+        OR (current_app_user_role() = 'TEACHER'
+            AND uploaded_by_teacher = current_app_user_id()
+            AND category IN ('Assignment_attachment', 'Announcement_attachment', 'Class_material')
+            AND EXISTS (
+                SELECT 1 FROM courses c
+                WHERE c.course_id = files.course_id AND c.teacher_id = current_app_user_id()
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS files_delete_policy ON files;
+CREATE POLICY files_delete_policy ON files FOR DELETE
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR (current_app_user_role() = 'TEACHER' AND uploaded_by_teacher = current_app_user_id())
+        OR (current_app_user_role() = 'STUDENT'
+            AND uploaded_by_student = current_app_user_id()
+            AND EXISTS (
+                SELECT 1 FROM submissions s
+                WHERE s.submission_id = files.submission_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.status <> 'GRADED'
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS class_materials_select_policy ON class_materials;
+CREATE POLICY class_materials_select_policy ON class_materials FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR posted_by = current_app_user_id()
+        OR EXISTS (
+            SELECT 1 FROM enrollments e WHERE e.course_id = class_materials.course_id AND e.student_id = current_app_user_id()
+        )
+    );
+
+DROP POLICY IF EXISTS class_materials_teacher_write_policy ON class_materials;
+CREATE POLICY class_materials_teacher_write_policy ON class_materials FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND posted_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = class_materials.course_id AND c.teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND posted_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = class_materials.course_id AND c.teacher_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS topics_select_policy ON topics;
+CREATE POLICY topics_select_policy ON topics FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (SELECT 1 FROM courses c WHERE c.course_id = topics.course_id AND c.teacher_id = current_app_user_id())
+        OR EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = topics.course_id AND e.student_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS topics_teacher_write_policy ON topics;
+CREATE POLICY topics_teacher_write_policy ON topics FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = topics.course_id AND c.teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = topics.course_id AND c.teacher_id = current_app_user_id())
+    );
+
+-- ACM: Lecture plans are strictly for the assigned Course Teacher
+DROP POLICY IF EXISTS lecture_plans_teacher_policy ON lecture_plans;
+CREATE POLICY lecture_plans_teacher_policy ON lecture_plans FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND created_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = lecture_plans.course_id AND c.teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND created_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = lecture_plans.course_id AND c.teacher_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS lecture_notes_select_policy ON lecture_notes;
+CREATE POLICY lecture_notes_select_policy ON lecture_notes FOR SELECT
+    USING (
+        created_by = current_app_user_id()
+        OR EXISTS (SELECT 1 FROM courses c WHERE c.course_id = lecture_notes.course_id AND c.teacher_id = current_app_user_id())
+        OR EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = lecture_notes.course_id AND e.student_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS lecture_notes_student_write_policy ON lecture_notes;
+CREATE POLICY lecture_notes_student_write_policy ON lecture_notes FOR ALL
+    USING (current_app_user_role() = 'STUDENT' AND created_by = current_app_user_id())
+    WITH CHECK (
+        current_app_user_role() = 'STUDENT'
+        AND created_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = lecture_notes.course_id AND e.student_id = current_app_user_id())
+    );
+
+-- ----------------------------------------------------------------------------
+-- F. QUIZZES, QUESTIONS & QUIZ ATTEMPTS (WITH ACTIVE WINDOW ENFORCEMENT)
+-- ACM: Teacher manages quizzes; Students can ONLY attempt when PUBLISHED and within time window!
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS quizzes_select_policy ON quizzes;
+CREATE POLICY quizzes_select_policy ON quizzes FOR SELECT
+    USING (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = quizzes.course_id AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT'
+            AND status IN ('PUBLISHED', 'CLOSED')
+            AND EXISTS (
+                SELECT 1 FROM enrollments e WHERE e.course_id = quizzes.course_id AND e.student_id = current_app_user_id()
+            )
+        )
+    );
+
+DROP POLICY IF EXISTS quizzes_teacher_write_policy ON quizzes;
+CREATE POLICY quizzes_teacher_write_policy ON quizzes FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND created_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = quizzes.course_id AND c.teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND created_by = current_app_user_id()
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = quizzes.course_id AND c.teacher_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS questions_select_policy ON questions;
+CREATE POLICY questions_select_policy ON questions FOR SELECT
+    USING (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM quizzes q JOIN courses c ON c.course_id = q.course_id
+            WHERE q.quiz_id = questions.quiz_id AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT' AND EXISTS (
+            SELECT 1 FROM quizzes q JOIN enrollments e ON e.course_id = q.course_id
+            WHERE q.quiz_id = questions.quiz_id
+              AND e.student_id = current_app_user_id()
+              AND (
+                  -- During active exam window OR after exam is closed
+                  (q.status = 'PUBLISHED' AND (q.start_time IS NULL OR NOW() >= q.start_time))
+                  OR q.status = 'CLOSED'
+              )
+        ))
+    );
+
+DROP POLICY IF EXISTS questions_teacher_write_policy ON questions;
+CREATE POLICY questions_teacher_write_policy ON questions FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (
+            SELECT 1 FROM quizzes q JOIN courses c ON c.course_id = q.course_id
+            WHERE q.quiz_id = questions.quiz_id AND c.teacher_id = current_app_user_id()
+        )
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (
+            SELECT 1 FROM quizzes q JOIN courses c ON c.course_id = q.course_id
+            WHERE q.quiz_id = questions.quiz_id AND c.teacher_id = current_app_user_id()
+        )
+    );
+
+-- 1. READ Quiz Attempts: Students view their own attempts at any time; Teachers view all in their course
+DROP POLICY IF EXISTS quiz_attempts_select_policy ON quiz_attempts;
+CREATE POLICY quiz_attempts_select_policy ON quiz_attempts FOR SELECT
+    USING (
+        (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id())
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM quizzes q JOIN courses c ON c.course_id = q.course_id
+            WHERE q.quiz_id = quiz_attempts.quiz_id AND c.teacher_id = current_app_user_id()
+        ))
+    );
+
+-- 2. INSERT Quiz Attempts: Students can ONLY start an attempt when quiz is PUBLISHED and inside active time window
+DROP POLICY IF EXISTS quiz_attempts_insert_policy ON quiz_attempts;
+CREATE POLICY quiz_attempts_insert_policy ON quiz_attempts FOR INSERT
+    WITH CHECK (
+        current_app_user_role() = 'STUDENT'
+        AND student_id = current_app_user_id()
+        AND EXISTS (
+            SELECT 1 FROM quizzes q
+            JOIN enrollments e ON e.course_id = q.course_id
+            WHERE q.quiz_id = quiz_attempts.quiz_id
+              AND e.student_id = current_app_user_id()
+              AND q.status = 'PUBLISHED'
+              AND (q.start_time IS NULL OR NOW() >= q.start_time)
+              AND (q.end_time IS NULL OR NOW() <= q.end_time)
+        )
+    );
+
+-- 3. UPDATE Quiz Attempts: Students can ONLY submit answers while quiz is PUBLISHED, inside window, and not yet submitted
+DROP POLICY IF EXISTS quiz_attempts_update_policy ON quiz_attempts;
+CREATE POLICY quiz_attempts_update_policy ON quiz_attempts FOR UPDATE
+    USING (
+        current_app_user_role() = 'STUDENT'
+        AND student_id = current_app_user_id()
+        AND submitted_at IS NULL
+    )
+    WITH CHECK (
+        current_app_user_role() = 'STUDENT'
+        AND student_id = current_app_user_id()
+        AND EXISTS (
+            SELECT 1 FROM quizzes q
+            JOIN enrollments e ON e.course_id = q.course_id
+            WHERE q.quiz_id = quiz_attempts.quiz_id
+              AND e.student_id = current_app_user_id()
+              AND q.status = 'PUBLISHED'
+              AND (q.start_time IS NULL OR NOW() >= q.start_time)
+              AND (q.end_time IS NULL OR NOW() <= q.end_time)
+        )
+    );
+
+-- ----------------------------------------------------------------------------
+-- G. ATTENDANCE & MARKS
+-- ACM: Students view ONLY their own attendance & marks; Teacher has full control; Admin has NO access
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS attendance_sessions_select_policy ON attendance_sessions;
+CREATE POLICY attendance_sessions_select_policy ON attendance_sessions FOR SELECT
+    USING (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = attendance_sessions.course_id AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT' AND EXISTS (
+            SELECT 1 FROM enrollments e WHERE e.course_id = attendance_sessions.course_id AND e.student_id = current_app_user_id()
+        ))
+    );
+
+DROP POLICY IF EXISTS attendance_sessions_teacher_write_policy ON attendance_sessions;
+CREATE POLICY attendance_sessions_teacher_write_policy ON attendance_sessions FOR ALL
+    USING (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = attendance_sessions.course_id AND c.teacher_id = current_app_user_id())
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER'
+        AND EXISTS (SELECT 1 FROM courses c WHERE c.course_id = attendance_sessions.course_id AND c.teacher_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS attendance_records_rls_policy ON attendance_records;
+CREATE POLICY attendance_records_rls_policy ON attendance_records FOR ALL
+    USING (
+        (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id())
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM attendance_sessions s
+            JOIN courses c ON c.course_id = s.course_id
+            WHERE s.session_id = attendance_records.session_id AND c.teacher_id = current_app_user_id()
+        ))
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM attendance_sessions s
+            JOIN courses c ON c.course_id = s.course_id
+            WHERE s.session_id = attendance_records.session_id AND c.teacher_id = current_app_user_id()
+        )
+    );
+
+DROP POLICY IF EXISTS marks_rls_policy ON marks;
+CREATE POLICY marks_rls_policy ON marks FOR ALL
+    USING (
+        (current_app_user_role() = 'STUDENT' AND student_id = current_app_user_id())
+        OR (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = marks.course_id AND c.teacher_id = current_app_user_id()
+        ))
+    )
+    WITH CHECK (
+        current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = marks.course_id AND c.teacher_id = current_app_user_id()
+        )
+    );
+
+-- ----------------------------------------------------------------------------
+-- H. CLASS SCHEDULES & DEADLINE NOTICES (CR & TEACHER PRIVILEGES)
+-- ACM: Enrolled students & Admin view; Assigned Teacher & Enrolled CR create/update
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS class_schedules_select_policy ON class_schedules;
+CREATE POLICY class_schedules_select_policy ON class_schedules FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (SELECT 1 FROM courses c WHERE c.course_id = class_schedules.course_id AND c.teacher_id = current_app_user_id())
+        OR EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = class_schedules.course_id AND e.student_id = current_app_user_id())
+    );
+
+DROP POLICY IF EXISTS class_schedules_write_policy ON class_schedules;
+CREATE POLICY class_schedules_write_policy ON class_schedules FOR ALL
+    USING (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM courses c WHERE c.course_id = class_schedules.course_id AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT' AND EXISTS (
+            SELECT 1 FROM enrollments e
+            JOIN students s ON s.student_id = e.student_id
+            WHERE e.course_id = class_schedules.course_id
+              AND s.student_id = current_app_user_id()
+              AND s.cr_status = TRUE
+        ))
+    )
+    WITH CHECK (
+        updated_by_user = current_app_user_id()
+        AND (
+            (current_app_user_role() = 'TEACHER' AND EXISTS (
+                SELECT 1 FROM courses c WHERE c.course_id = class_schedules.course_id AND c.teacher_id = current_app_user_id()
+            ))
+            OR (current_app_user_role() = 'STUDENT' AND EXISTS (
+                SELECT 1 FROM enrollments e
+                JOIN students s ON s.student_id = e.student_id
+                WHERE e.course_id = class_schedules.course_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.cr_status = TRUE
+            ))
+        )
+    );
+
+DROP POLICY IF EXISTS deadline_notices_select_policy ON deadline_notices;
+CREATE POLICY deadline_notices_select_policy ON deadline_notices FOR SELECT
+    USING (
+        current_app_user_role() = 'ADMIN'
+        OR EXISTS (
+            SELECT 1 FROM assignments a JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = deadline_notices.assignment_id AND c.teacher_id = current_app_user_id()
+        )
+        OR EXISTS (
+            SELECT 1 FROM assignments a JOIN enrollments e ON e.course_id = a.course_id
+            WHERE a.assignment_id = deadline_notices.assignment_id AND e.student_id = current_app_user_id()
+        )
+    );
+
+-- ACM: Both Assigned Course Teacher (Full Control) and Enrolled CR (Create/Broadcast) can manage deadline notices
+DROP POLICY IF EXISTS deadline_notices_write_policy ON deadline_notices;
+CREATE POLICY deadline_notices_write_policy ON deadline_notices FOR ALL
+    USING (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = deadline_notices.assignment_id
+              AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT'
+            AND posted_by = current_app_user_id()
+            AND EXISTS (
+                SELECT 1 FROM assignments a
+                JOIN enrollments e ON e.course_id = a.course_id
+                JOIN students s ON s.student_id = e.student_id
+                WHERE a.assignment_id = deadline_notices.assignment_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.cr_status = TRUE
+            )
+        )
+    )
+    WITH CHECK (
+        (current_app_user_role() = 'TEACHER' AND EXISTS (
+            SELECT 1 FROM assignments a
+            JOIN courses c ON c.course_id = a.course_id
+            WHERE a.assignment_id = deadline_notices.assignment_id
+              AND c.teacher_id = current_app_user_id()
+        ))
+        OR (current_app_user_role() = 'STUDENT'
+            AND posted_by = current_app_user_id()
+            AND EXISTS (
+                SELECT 1 FROM assignments a
+                JOIN enrollments e ON e.course_id = a.course_id
+                JOIN students s ON s.student_id = e.student_id
+                WHERE a.assignment_id = deadline_notices.assignment_id
+                  AND s.student_id = current_app_user_id()
+                  AND s.cr_status = TRUE
+            )
+        )
+    );
+
+-- ----------------------------------------------------------------------------
+-- I. AUDIT LOGS
+-- ACM: Read-only access strictly for ADMIN (No access for Student, Teacher, or CR)
+-- ----------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS audit_logs_admin_select_policy ON audit_logs;
+CREATE POLICY audit_logs_admin_select_policy ON audit_logs FOR SELECT
+    USING (current_app_user_role() = 'ADMIN');
+
+-- ============================================================================
+-- 5. AUTOMATED SECURITY AUDIT TRIGGERS (NO PASSWORDS OR TOKENS LOGGED)
+-- ============================================================================
+
+-- Trigger 1: Audit Marks Insert / Update / Delete
+CREATE OR REPLACE FUNCTION fn_audit_marks_changes() RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, new_values)
+        VALUES (
+            current_app_user_id(), 'MARKS_INSERT', 'marks', NEW.mark_id,
+            jsonb_build_object(
+                'student_id', NEW.student_id,
+                'course_id', NEW.course_id,
+                'assessment_name', NEW.assessment_name,
+                'marks_obtained', NEW.marks_obtained,
+                'total_marks', NEW.total_marks
+            )
+        );
+        RETURN NEW;
+    ELSIF TG_OP = 'UPDATE' AND (OLD.marks_obtained IS DISTINCT FROM NEW.marks_obtained) THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values, new_values)
+        VALUES (
+            current_app_user_id(), 'MARKS_UPDATE', 'marks', NEW.mark_id,
+            jsonb_build_object('marks_obtained', OLD.marks_obtained),
+            jsonb_build_object('marks_obtained', NEW.marks_obtained)
+        );
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values)
+        VALUES (
+            current_app_user_id(), 'MARKS_DELETE', 'marks', OLD.mark_id,
+            jsonb_build_object(
+                'student_id', OLD.student_id,
+                'assessment_name', OLD.assessment_name,
+                'marks_obtained', OLD.marks_obtained
+            )
+        );
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_audit_marks ON marks;
+CREATE TRIGGER trg_audit_marks
+AFTER INSERT OR UPDATE OR DELETE ON marks
+FOR EACH ROW EXECUTE FUNCTION fn_audit_marks_changes();
+
+-- Trigger 2: Audit Student Account Verification & CR Status Changes (Excludes password_hash & phone)
+CREATE OR REPLACE FUNCTION fn_audit_student_status() RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.is_verified IS DISTINCT FROM NEW.is_verified THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values, new_values)
+        VALUES (
+            current_app_user_id(), 'ACCOUNT_VERIFICATION', 'students', NEW.student_id,
+            jsonb_build_object('is_verified', OLD.is_verified),
+            jsonb_build_object('is_verified', NEW.is_verified)
+        );
+    END IF;
+
+    IF OLD.cr_status IS DISTINCT FROM NEW.cr_status THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values, new_values)
+        VALUES (
+            current_app_user_id(), 'CR_STATUS_CHANGE', 'students', NEW.student_id,
+            jsonb_build_object('cr_status', OLD.cr_status),
+            jsonb_build_object('cr_status', NEW.cr_status)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_audit_student_status ON students;
+CREATE TRIGGER trg_audit_student_status
+AFTER UPDATE ON students
+FOR EACH ROW EXECUTE FUNCTION fn_audit_student_status();
+
+-- Trigger 3: Audit Teacher Account Verification
+CREATE OR REPLACE FUNCTION fn_audit_teacher_status() RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.is_verified IS DISTINCT FROM NEW.is_verified THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values, new_values)
+        VALUES (
+            current_app_user_id(), 'ACCOUNT_VERIFICATION', 'teachers', NEW.teacher_id,
+            jsonb_build_object('is_verified', OLD.is_verified),
+            jsonb_build_object('is_verified', NEW.is_verified)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_audit_teacher_status ON teachers;
+CREATE TRIGGER trg_audit_teacher_status
+AFTER UPDATE ON teachers
+FOR EACH ROW EXECUTE FUNCTION fn_audit_teacher_status();
+
+-- Trigger 4: Audit User Role Changes
+CREATE OR REPLACE FUNCTION fn_audit_role_change() RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.role IS DISTINCT FROM NEW.role THEN
+        INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values, new_values)
+        VALUES (
+            current_app_user_id(), 'ROLE_CHANGE', 'users', NEW.user_id,
+            jsonb_build_object('role', OLD.role),
+            jsonb_build_object('role', NEW.role)
+        );
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_audit_user_role ON users;
+CREATE TRIGGER trg_audit_user_role
+AFTER UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION fn_audit_role_change();
+
+-- Trigger 5: Audit Course Deletion
+CREATE OR REPLACE FUNCTION fn_audit_course_deletion() RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO audit_logs (actor_user_id, action_type, target_table, target_record_id, old_values)
+    VALUES (
+        current_app_user_id(), 'COURSE_DELETE', 'courses', OLD.course_id,
+        jsonb_build_object(
+            'course_code', OLD.course_code,
+            'course_name', OLD.course_name,
+            'teacher_id', OLD.teacher_id
+        )
+    );
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_audit_course_delete ON courses;
+CREATE TRIGGER trg_audit_course_delete
+BEFORE DELETE ON courses
+FOR EACH ROW EXECUTE FUNCTION fn_audit_course_deletion();
+
+-- ============================================================================
+-- 6. SUPABASE STORAGE BUCKETS & STORAGE RLS POLICIES (MALICIOUS UPLOAD PROTECTION)
+-- ============================================================================
+-- Automatically creates/updates the two private buckets on Supabase with a 25MB limit
+-- and strict MIME-type whitelist, and blocks direct anonymous public access.
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'storage' AND table_name = 'buckets') THEN
+        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+        VALUES
+            (
+                'private-course-files',
+                'private-course-files',
+                FALSE,
+                26214400, -- 25MB max
+                ARRAY[
+                    'application/pdf',
+                    'image/jpeg',
+                    'image/png',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'application/zip'
+                ]
+            ),
+            (
+                'private-submissions',
+                'private-submissions',
+                FALSE,
+                26214400, -- 25MB max
+                ARRAY[
+                    'application/pdf',
+                    'image/jpeg',
+                    'image/png',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    'application/zip'
+                ]
+            )
+        ON CONFLICT (id) DO UPDATE
+        SET public = FALSE,
+            file_size_limit = EXCLUDED.file_size_limit,
+            allowed_mime_types = EXCLUDED.allowed_mime_types;
+    END IF;
+END
+$$;
+
+-- Storage Object Policies (Blocks anonymous access; files are served via FastAPI short-lived signed URLs)
+DROP POLICY IF EXISTS "Deny Public Anon Access" ON storage.objects;
+CREATE POLICY "Deny Public Anon Access" ON storage.objects
+    FOR ALL
+    TO anon
+    USING (FALSE)
+    WITH CHECK (FALSE);
+
+DROP POLICY IF EXISTS "Allow Authenticated Backend Storage Operations" ON storage.objects;
+CREATE POLICY "Allow Authenticated Backend Storage Operations" ON storage.objects
+    FOR ALL
+    TO authenticated
+    USING (bucket_id IN ('private-course-files', 'private-submissions'))
+    WITH CHECK (bucket_id IN ('private-course-files', 'private-submissions'));

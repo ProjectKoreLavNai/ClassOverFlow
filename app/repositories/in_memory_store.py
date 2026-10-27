@@ -12,9 +12,15 @@ class InMemoryStore:
     users: dict[str, dict[str, Any]] = {}
     courses: dict[int, dict[str, Any]] = {}
     announcements: dict[int, dict[str, Any]] = {}
+    announcement_comments: dict[int, dict[str, Any]] = {}
+    memberships: set[tuple[int, str]] = set()
+    revoked_tokens: set[str] = set()
 
     @classmethod
     def reset(cls) -> None:
         cls.users.clear()
         cls.courses.clear()
         cls.announcements.clear()
+        cls.announcement_comments.clear()
+        cls.memberships.clear()
+        cls.revoked_tokens.clear()
