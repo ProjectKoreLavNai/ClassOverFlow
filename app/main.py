@@ -3,6 +3,7 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -10,6 +11,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1.api import api_router
 from app.config import settings
 from app.db.database import check_database_connection, engine
+from app.repositories.in_memory_store import InMemoryStore
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +26,9 @@ async def lifespan(_: FastAPI):
                 "Database startup check failed; API is starting in not-ready state: %s",
                 exc,
             )
+            InMemoryStore.seed_defaults()
+    else:
+        InMemoryStore.seed_defaults()
     yield
     if settings.storage_backend == "database":
         await engine.dispose()
@@ -37,6 +42,14 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(api_router)

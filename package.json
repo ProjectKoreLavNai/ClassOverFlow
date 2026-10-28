@@ -1,0 +1,12 @@
+{
+  "name": "classoverflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ClassOverFlow - Full-Stack Academic Intelligence Platform",
+  "scripts": {
+    "dev": "python3 start.py",
+    "dev:backend": "./.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  }
+}

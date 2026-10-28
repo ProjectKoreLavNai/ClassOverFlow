@@ -1,0 +1,1531 @@
+{
+ "url": "http://localhost:4173/",
+ "at": "2026-10-28T16:33:22.176Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.65,
+    0.62
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 975,
+     "screens": 1.1,
+     "words": 161,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 13,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 38,
+     "vw": 2.7,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 76,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "All classrooms",
+     "words": 2,
+     "lines": 1,
+     "size": 38.4,
+     "font": "Lora"
+    },
+    "headings": [
+     {
+      "text": "All classrooms",
+      "words": 2,
+      "chars": 14,
+      "lines": 1,
+      "size": 38.4,
+      "vw": 2.7,
+      "font": "Lora",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.18,
+      "top": 76,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Source Sans 3",
+       "share": 0.5,
+       "mono": false
+      },
+      {
+       "family": "Source Serif 4",
+       "share": 0.3,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.2,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      23,
+      38
+     ],
+     "sizeCount": 10,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 38.4,
+      "vw": 2.7,
+      "font": "Lora",
+      "text": "All classrooms"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.07,
+     "centerShare": 0.07,
+     "smallText": 2
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#faf7f2",
+     "bodyBgHsl": {
+      "h": 38,
+      "s": 0.44,
+      "l": 0.96
+     },
+     "dark": false,
+     "sectionBgs": [],
+     "textColors": [
+      {
+       "color": "#0a0a0a",
+       "share": 0.37
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.28
+      },
+      {
+       "color": "#5f5f5f",
+       "share": 0.28
+      },
+      {
+       "color": "#3d3d3d",
+       "share": 0.07
+      },
+      {
+       "color": "#2a2a2a",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#f1ebe1",
+      "hsl": {
+       "h": 37,
+       "s": 0.36,
+       "l": 0.91
+      },
+      "fg": "#0a0a0a"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 7,
+     "inHero": 7,
+     "radius": 6,
+     "height": 32,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Sign out",
+      "All classrooms",
+      "Create course",
+      "Duplicate",
+      "Duplicate"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 6,
+     "hairlineSamples": [
+      "header.app-top 1440px",
+      "aside#app-nav.app-side 240px",
+      "div.course-foot 363px",
+      "div.course-foot 363px",
+      "div.course-foot 363px"
+     ],
+     "outlinedBoxes": 4,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 8,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": [
+      {
+       "count": 4,
+       "iconTopped": false,
+       "rounded": true,
+       "top": 170
+      }
+     ]
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 52,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "source sans 3",
+     "source serif 4"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 975,
+    "margins": {
+     "left": 12,
+     "right": 32
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "All classrooms",
+      "size": 38,
+      "top": 76,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 272,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 1,
+    "bodySize": 14,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.22,
+    "voidBox": {
+     "x": 660,
+     "y": 540,
+     "w": 780,
+     "h": 360
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#faf7f2",
+    "sidebar": {
+     "w": 240,
+     "tag": "aside",
+     "links": 5,
+     "share": 0.17
+    },
+    "topbar": {
+     "h": 52
+    },
+    "canvas": {
+     "left": 32,
+     "right": 16
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 38,
+     "vw": 2.7,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 76,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 5,
+     "firstScreen": 5,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 10,
+     "radii": [
+      [
+       0,
+       6
+      ],
+      [
+       8,
+       4
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 4,
+     "tabularShare": 0,
+     "kpiMax": 16.8
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.17,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      23,
+      38
+     ]
+    },
+    "title": {
+     "text": "All classrooms",
+     "size": 38,
+     "top": 76
+    },
+    "colourShare": 0
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 2,
+   "filled": [
+    0.86,
+    0.9
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1739,
+     "screens": 1.7,
+     "words": 125,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 13,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 30,
+     "vw": 4,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 72,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "All classrooms",
+     "words": 2,
+     "lines": 1,
+     "size": 30.4,
+     "font": "Lora"
+    },
+    "headings": [
+     {
+      "text": "All classrooms",
+      "words": 2,
+      "chars": 14,
+      "lines": 1,
+      "size": 30.4,
+      "vw": 4,
+      "font": "Lora",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.27,
+      "top": 72,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Source Serif 4",
+       "share": 0.39,
+       "mono": false
+      },
+      {
+       "family": "Source Sans 3",
+       "share": 0.37,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.24,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      13,
+      14,
+      15,
+      17,
+      18,
+      20,
+      23,
+      30
+     ],
+     "sizeCount": 8,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 30.4,
+      "vw": 4,
+      "font": "Lora",
+      "text": "All classrooms"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.04,
+     "centerShare": 0.09,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#faf7f2",
+     "bodyBgHsl": {
+      "h": 38,
+      "s": 0.44,
+      "l": 0.96
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 157,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#0a0a0a",
+       "share": 0.44
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.35
+      },
+      {
+       "color": "#5f5f5f",
+       "share": 0.21
+      },
+      {
+       "color": "#2a2a2a",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#141414",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 0.08
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 5,
+     "inHero": 3,
+     "radius": 6,
+     "height": 32,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Create course",
+      "Duplicate",
+      "Duplicate"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 5,
+     "hairlineSamples": [
+      "header.app-top 768px",
+      "div.course-foot 734px",
+      "div.course-foot 734px",
+      "div.course-foot 734px",
+      "div.course-foot 734px"
+     ],
+     "outlinedBoxes": 4,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 8,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 52,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "source sans 3",
+     "source serif 4"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1739,
+    "margins": {
+     "left": 16,
+     "right": 16
+    },
+    "sections": [
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 157,
+      "height": 369,
+      "words": 31,
+      "media": 0,
+      "middle": 236,
+      "heading": {
+       "text": "Software Design & Dev",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 545,
+      "height": 369,
+      "words": 28,
+      "media": 0,
+      "middle": 280,
+      "heading": {
+       "text": "Database Systems",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 934,
+      "height": 369,
+      "words": 29,
+      "media": 0,
+      "middle": 225,
+      "heading": {
+       "text": "Operating Systems",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 1322,
+      "height": 369,
+      "words": 27,
+      "media": 0,
+      "middle": 329,
+      "heading": {
+       "text": "Machine Learning",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "All classrooms",
+      "size": 30,
+      "top": 72,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 1,
+    "bodySize": 14,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": false,
+    "ground": "#faf7f2",
+    "sidebar": null,
+    "topbar": {
+     "h": 52
+    },
+    "canvas": {
+     "left": 16,
+     "right": 16
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 30,
+     "vw": 4,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 72,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 4,
+     "firstScreen": 3,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       8,
+       4
+      ],
+      [
+       0,
+       4
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 4,
+     "tabularShare": 0,
+     "kpiMax": 16.8
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.16,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      23,
+      30
+     ]
+    },
+    "title": {
+     "text": "All classrooms",
+     "size": 30,
+     "top": 72
+    },
+    "colourShare": 0.001
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 3,
+   "filled": [
+    0.72,
+    0.92,
+    0.8
+   ],
+   "motion": {
+    "elements": 0,
+    "css": 0,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 1791,
+     "screens": 2.1,
+     "words": 125,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 13,
+     "sections": 0,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 30,
+     "vw": 7.8,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 72,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": {
+     "text": "All classrooms",
+     "words": 2,
+     "lines": 1,
+     "size": 30.4,
+     "font": "Lora"
+    },
+    "headings": [
+     {
+      "text": "All classrooms",
+      "words": 2,
+      "chars": 14,
+      "lines": 1,
+      "size": 30.4,
+      "vw": 7.8,
+      "font": "Lora",
+      "weight": 600,
+      "tracking": 0,
+      "leading": 1.2,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "left",
+      "widthRatio": 0.53,
+      "top": 72,
+      "tag": "h1",
+      "kind": "heading"
+     },
+     {
+      "text": "Software Design & Dev",
+      "words": 4,
+      "chars": 21,
+      "lines": 1,
+      "size": 22.7,
+      "vw": 5.8,
+      "font": "Lora",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.79,
+      "top": 258,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Database Systems",
+      "words": 2,
+      "chars": 16,
+      "lines": 1,
+      "size": 22.7,
+      "vw": 5.8,
+      "font": "Lora",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.79,
+      "top": 647,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Operating Systems",
+      "words": 2,
+      "chars": 17,
+      "lines": 1,
+      "size": 22.7,
+      "vw": 5.8,
+      "font": "Lora",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.79,
+      "top": 1035,
+      "tag": "h2",
+      "kind": "heading"
+     },
+     {
+      "text": "Machine Learning",
+      "words": 2,
+      "chars": 16,
+      "lines": 1,
+      "size": 22.7,
+      "vw": 5.8,
+      "font": "Lora",
+      "weight": 700,
+      "tracking": 0,
+      "leading": 1.25,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.79,
+      "top": 1424,
+      "tag": "h2",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 5,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": 2,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "Source Serif 4",
+       "share": 0.39,
+       "mono": false
+      },
+      {
+       "family": "Source Sans 3",
+       "share": 0.37,
+       "mono": false
+      },
+      {
+       "family": "Lora",
+       "share": 0.24,
+       "mono": false
+      }
+     ],
+     "familyCount": 3,
+     "sizes": [
+      13,
+      14,
+      15,
+      17,
+      18,
+      20,
+      23,
+      30
+     ],
+     "sizeCount": 8,
+     "notLoaded": [],
+     "body": null,
+     "measureChars": null,
+     "max": {
+      "size": 30.4,
+      "vw": 7.8,
+      "font": "Lora",
+      "text": "All classrooms"
+     },
+     "monoShare": 0,
+     "monoProseShare": 0,
+     "monoFamilies": [],
+     "monoSamples": [],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.04,
+     "centerShare": 0.09,
+     "smallText": 0
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#faf7f2",
+     "bodyBgHsl": {
+      "h": 38,
+      "s": 0.44,
+      "l": 0.96
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#ffffff",
+       "top": 209,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#0a0a0a",
+       "share": 0.44
+      },
+      {
+       "color": "#ffffff",
+       "share": 0.35
+      },
+      {
+       "color": "#5f5f5f",
+       "share": 0.21
+      },
+      {
+       "color": "#2a2a2a",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#141414",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 0.08
+      },
+      "fg": "#ffffff"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 5,
+     "inHero": 2,
+     "radius": 6,
+     "height": 32,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "Create course",
+      "Duplicate"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 0,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 5,
+     "hairlineSamples": [
+      "header.app-top 390px",
+      "div.course-foot 356px",
+      "div.course-foot 356px",
+      "div.course-foot 356px",
+      "div.course-foot 356px"
+     ],
+     "outlinedBoxes": 4,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 4,
+     "boxRadius": 8,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": true,
+     "height": 52,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": [
+     "lora",
+     "source sans 3",
+     "source serif 4"
+    ]
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 1791,
+    "margins": {
+     "left": 16,
+     "right": 33
+    },
+    "sections": [
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 209,
+      "height": 369,
+      "words": 31,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Software Design & Dev",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": true,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 597,
+      "height": 369,
+      "words": 28,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Database Systems",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 986,
+      "height": 369,
+      "words": 29,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Operating Systems",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": false,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     },
+     {
+      "sel": "li.course-card",
+      "tag": "li",
+      "top": 1374,
+      "height": 369,
+      "words": 27,
+      "media": 0,
+      "middle": 0,
+      "heading": {
+       "text": "Machine Learning",
+       "size": 23,
+       "tag": "h2"
+      },
+      "left": 41,
+      "right": 33,
+      "textLeft": 41,
+      "textRight": 44,
+      "fullBleed": false,
+      "footer": true,
+      "hero": false,
+      "continues": false,
+      "pinned": false
+     }
+    ],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "All classrooms",
+      "size": 30,
+      "top": 72,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [
+     {
+      "x": 16,
+      "n": 1
+     }
+    ],
+    "leftBlocks": 1,
+    "bodySize": 14,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": false,
+    "ground": "#faf7f2",
+    "sidebar": null,
+    "topbar": {
+     "h": 52
+    },
+    "canvas": {
+     "left": 16,
+     "right": -14
+    },
+    "hero": {
+     "text": "All classrooms",
+     "words": 2,
+     "chars": 14,
+     "lines": 1,
+     "size": 30,
+     "vw": 7.8,
+     "font": "Lora",
+     "weight": 600,
+     "tracking": 0,
+     "leading": 1.2,
+     "top": 72,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 4,
+     "firstScreen": 2,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 8,
+     "radii": [
+      [
+       8,
+       4
+      ],
+      [
+       0,
+       4
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 4,
+     "tabularShare": 0,
+     "kpiMax": 16.8
+    },
+    "rows": null,
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.16,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      23,
+      30
+     ]
+    },
+    "title": {
+     "text": "All classrooms",
+     "size": 30,
+     "top": 72
+    },
+    "colourShare": 0.002
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "WARN",
+   "id": "palette-cream",
+   "width": 1440,
+   "message": "Yellow-cream background (page background #faf7f2, button #f1ebe1).",
+   "fix": "Use the drawn palette. If you want warmth, take a low-chroma stone or bone, not a yellow cream.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "font-count",
+   "width": 1440,
+   "message": "3 typefaces in use (Source Sans 3, Source Serif 4, Lora).",
+   "fix": "Two at most.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "app-title-size",
+   "width": 1440,
+   "message": "The h1 is 38px (\"All classrooms\").",
+   "fix": "An app screen is not a landing page: the title is 18-32px (20-24px on a phone).",
+   "alsoAt": [
+    390
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/desktop-fold.jpg",
+   "pages": [
+    "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/tablet-fold.jpg",
+   "pages": [
+    "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/mobile-fold.jpg",
+   "pages": [
+    "/home/sajid/3-1/Software/ClassOverFlow/.taste-skill/after/inspect-teacher/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

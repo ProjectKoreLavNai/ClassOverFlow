@@ -64,7 +64,7 @@ async def get_user_profile(
 
 @users_router.get("")
 async def list_users(
-    role: str | None = Query(default=None, pattern="^(student|teacher|admin)$"),
+    role: str | None = Query(default=None, pattern="^(student|teacher|admin|cr)$"),
     search: str | None = Query(default=None, min_length=1, max_length=150),
     limit: int = Query(default=20, ge=1, le=100),
     user: dict = Depends(require_roles("admin")),

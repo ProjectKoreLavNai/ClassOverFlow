@@ -8,7 +8,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr = Field(..., max_length=150)
     password: str = Field(..., min_length=12, max_length=72)
-    role: Literal["student", "teacher"] = "student"
+    role: Literal["student", "teacher", "cr", "admin"] = "student"
     phone: str | None = Field(default=None, max_length=20)
 
     @field_validator("password")

@@ -1,0 +1,329 @@
+/**
+ * ClassOverFlow Backend API Client
+ * Connects the React frontend to the FastAPI backend service
+ */
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+
+export interface ApiResponse<T> {
+  data: T;
+  error?: string | any[];
+}
+
+export interface BackendUser {
+  user_id?: number;
+  email: string;
+  role: string;
+  username: string;
+  full_name?: string;
+  phone?: string | null;
+}
+
+export interface AuthTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  user: BackendUser;
+}
+
+export interface BackendCourse {
+  course_id: number;
+  course_name: string;
+  course_code: string;
+  description: string;
+  syllabus: string;
+  class_code?: string;
+  teacher_email?: string;
+  teacher_id?: number;
+  created_at?: string;
+}
+
+export interface BackendAnnouncement {
+  announcement_id: number;
+  course_id: number;
+  title: string;
+  content: string;
+  author_email?: string;
+  created_at?: string;
+}
+
+export interface BackendComment {
+  comment_id: number;
+  announcement_id: number;
+  content: string;
+  author_id?: number;
+  author_email?: string;
+  created_at?: string;
+}
+
+export class ApiError extends Error {
+  public status: number;
+  public details: any;
+
+  constructor(message: string, status: number, details?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.details = details;
+  }
+}
+
+class ApiClient {
+  private token: string | null = null;
+  private refreshToken: string | null = null;
+
+  constructor() {
+    this.token = localStorage.getItem('classoverflow_access_token');
+    this.refreshToken = localStorage.getItem('classoverflow_refresh_token');
+  }
+
+  public setTokens(accessToken: string | null, refreshToken: string | null = null) {
+    this.token = accessToken;
+    if (accessToken) {
+      localStorage.setItem('classoverflow_access_token', accessToken);
+    } else {
+      localStorage.removeItem('classoverflow_access_token');
+    }
+
+    if (refreshToken) {
+      this.refreshToken = refreshToken;
+      localStorage.setItem('classoverflow_refresh_token', refreshToken);
+    } else if (refreshToken === null && accessToken === null) {
+      this.refreshToken = null;
+      localStorage.removeItem('classoverflow_refresh_token');
+    }
+  }
+
+  public getToken(): string | null {
+    return this.token || localStorage.getItem('classoverflow_access_token');
+  }
+
+  public getRefreshToken(): string | null {
+    return this.refreshToken || localStorage.getItem('classoverflow_refresh_token');
+  }
+
+  public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const headers = new Headers(options.headers || {});
+
+    if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const currentToken = this.getToken();
+    if (currentToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${currentToken}`);
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      });
+
+      if (response.status === 204) {
+        return {} as T;
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const errorMessage =
+          data.detail ||
+          data.error ||
+          (Array.isArray(data.error) ? data.error.map((e: any) => e.msg).join(', ') : null) ||
+          response.statusText ||
+          'API Request Failed';
+        throw new ApiError(errorMessage, response.status, data);
+      }
+
+      return data as T;
+    } catch (err: any) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      throw new ApiError(err.message || 'Network connection to backend failed', 0, err);
+    }
+  }
+
+  // --- Health Checks ---
+  public async checkHealth(): Promise<{ status: string }> {
+    return this.request<{ status: string }>('/health/live');
+  }
+
+  // --- Authentication ---
+  public async login(payload: { email: string; password?: string }): Promise<AuthTokenResponse> {
+    const res = await this.request<{ data: AuthTokenResponse }>('/api/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: payload.email,
+        password: payload.password || 'Password@123',
+      }),
+    });
+    this.setTokens(res.data.access_token, res.data.refresh_token);
+    return res.data;
+  }
+
+  public async register(payload: {
+    fullName: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    role: string;
+    username?: string;
+  }): Promise<BackendUser> {
+    const username =
+      payload.username ||
+      payload.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') ||
+      `user_${Date.now()}`;
+    const res = await this.request<{ data: BackendUser }>('/api/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: payload.fullName,
+        username: username.length < 3 ? `${username}_usr` : username,
+        email: payload.email,
+        password: payload.password || 'Password@123',
+        role: payload.role.toLowerCase(),
+        phone: payload.phone || null,
+      }),
+    });
+    return res.data;
+  }
+
+  public async logout(): Promise<void> {
+    const refreshToken = this.getRefreshToken();
+    try {
+      if (refreshToken && this.token) {
+        await this.request('/api/v1/auth/logout', {
+          method: 'POST',
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      }
+    } catch (e) {
+      console.warn('Backend logout encountered error, clearing tokens locally:', e);
+    } finally {
+      this.setTokens(null, null);
+    }
+  }
+
+  public async getProfile(): Promise<BackendUser> {
+    const res = await this.request<{ data: BackendUser }>('/api/v1/auth/me');
+    return res.data;
+  }
+
+  public async updateProfile(payload: Partial<BackendUser>): Promise<BackendUser> {
+    const res = await this.request<{ data: BackendUser }>('/api/v1/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async listUsers(role?: string, search?: string): Promise<BackendUser[]> {
+    const params = new URLSearchParams();
+    if (role) params.set('role', role);
+    if (search) params.set('search', search);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await this.request<{ data: BackendUser[] }>(`/api/v1/users${query}`);
+    return res.data;
+  }
+
+  // --- Courses ---
+  public async listCourses(): Promise<BackendCourse[]> {
+    const res = await this.request<{ data: BackendCourse[] }>('/api/v1/courses');
+    return res.data;
+  }
+
+  public async getCourse(courseId: number): Promise<BackendCourse> {
+    const res = await this.request<{ data: BackendCourse }>(`/api/v1/courses/${courseId}`);
+    return res.data;
+  }
+
+  public async createCourse(payload: {
+    course_name: string;
+    course_code: string;
+    description: string;
+    syllabus: string;
+    teacher_id?: number;
+  }): Promise<BackendCourse> {
+    const res = await this.request<{ data: BackendCourse }>('/api/v1/courses', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async updateCourse(courseId: number, payload: Partial<BackendCourse>): Promise<BackendCourse> {
+    const res = await this.request<{ data: BackendCourse }>(`/api/v1/courses/${courseId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async deleteCourse(courseId: number): Promise<void> {
+    await this.request(`/api/v1/courses/${courseId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  public async joinCourse(classCode: string): Promise<{ course_id: number; role: string }> {
+    const res = await this.request<{ data: { course_id: number; role: string } }>('/api/v1/courses/join', {
+      method: 'POST',
+      body: JSON.stringify({ class_code: classCode }),
+    });
+    return res.data;
+  }
+
+  public async listCourseMembers(courseId: number): Promise<any[]> {
+    const res = await this.request<{ data: any[] }>(`/api/v1/courses/${courseId}/members`);
+    return res.data;
+  }
+
+  // --- Announcements ---
+  public async listAnnouncements(courseId: number): Promise<BackendAnnouncement[]> {
+    const res = await this.request<{ data: BackendAnnouncement[] }>(`/api/v1/courses/${courseId}/announcements`);
+    return res.data;
+  }
+
+  public async createAnnouncement(
+    courseId: number,
+    payload: { title: string; content: string }
+  ): Promise<BackendAnnouncement> {
+    const res = await this.request<{ data: BackendAnnouncement }>(`/api/v1/courses/${courseId}/announcements`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async deleteAnnouncement(announcementId: number): Promise<void> {
+    await this.request(`/api/v1/announcements/${announcementId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // --- Comments ---
+  public async listComments(announcementId: number): Promise<BackendComment[]> {
+    const res = await this.request<{ data: BackendComment[] }>(`/api/v1/announcements/${announcementId}/comments`);
+    return res.data;
+  }
+
+  public async createComment(announcementId: number, content: string): Promise<BackendComment> {
+    const res = await this.request<{ data: BackendComment }>(`/api/v1/announcements/${announcementId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+    return res.data;
+  }
+
+  public async deleteComment(announcementId: number, commentId: number): Promise<void> {
+    await this.request(`/api/v1/announcements/${announcementId}/comments/${commentId}`, {
+      method: 'DELETE',
+    });
+  }
+}
+
+export const api = new ApiClient();
+export default api;
