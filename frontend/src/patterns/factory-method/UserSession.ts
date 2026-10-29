@@ -67,7 +67,7 @@ export class TeacherSession extends UserSession {
   public override canAccessCRDesk(): boolean { return false; }
   public override canAccessAIStudio(): boolean { return true; }
   public override canCreateCourse(): boolean { return true; }
-  public override canJoinCourse(): boolean { return false; }
+  public override canJoinCourse(): boolean { return true; }
   public override canEditGrades(): boolean { return true; }
   public override canSubmitWork(): boolean { return false; }
   public override canBroadcastAlerts(): boolean { return true; }

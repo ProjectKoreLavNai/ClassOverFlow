@@ -85,6 +85,25 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const [isJoinOpen, setIsJoinOpen] = useState(false);
 
   const isEnrolled = session ? facade.isStudentEnrolled(course.code, session.email) : false;
+  const canPostAnnouncement = session ? facade.canUserPostAnnouncement(course.code, session) : false;
+
+  // Find logged-in student record or provide realistic dummy record
+  const myRecord = GRADEBOOK.find(
+    (r) => session && (
+      r.name.toLowerCase() === session.name.toLowerCase() ||
+      (session.roll && r.roll === session.roll)
+    )
+  ) || {
+    roll: session?.roll || '14',
+    name: session?.name || 'Kiyotaka Ayanokoji',
+    role: session?.role === 'cr' ? 'Class Representative' : 'Student',
+    attended: 23,
+    assign: 27,
+    quiz: 19,
+    mid: 45,
+    attPct: (23 / CLASSES_HELD) * 100,
+    total: 91
+  };
 
   // AI insights card state in gradebook
   const [showAIInsights, setShowAIInsights] = useState(false);
@@ -226,6 +245,11 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
     e.preventDefault();
     if (!session) return;
 
+    if (!canPostAnnouncement) {
+      setPublishFeedback('Only course teachers and Class Representatives (CR) are authorized to post announcements.');
+      return;
+    }
+
     const res = facade.publishAnnouncement(
       course.code,
       postTitle || 'Course Stream Memo',
@@ -360,20 +384,37 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             <div className="stat-value">{course.studentsCount}</div>
             <div className="stat-note">{course.term}</div>
           </div>
-          <div className="stat">
-            <div className="stat-label">Average attendance</div>
-            <div className="stat-value">{AVERAGE_ATTENDANCE.toFixed(1)}<span className="stat-unit">%</span></div>
-            <div className="stat-note">Over {CLASSES_HELD} classes held</div>
-          </div>
-          <div className="stat">
-            <div className="stat-label">Below {ATTENDANCE_MINIMUM}% attendance</div>
-            <div className="stat-value" style={{ color: BELOW_MINIMUM.length > 0 ? 'var(--negative)' : undefined }}>
-              {BELOW_MINIMUM.length}
-            </div>
-            <div className="stat-note">
-              {BELOW_MINIMUM.length > 0 ? BELOW_MINIMUM.map((r) => r.name).join(', ') : 'Everyone is above the minimum'}
-            </div>
-          </div>
+          {isTeacher ? (
+            <>
+              <div className="stat">
+                <div className="stat-label">Average attendance</div>
+                <div className="stat-value">{AVERAGE_ATTENDANCE.toFixed(1)}<span className="stat-unit">%</span></div>
+                <div className="stat-note">Over {CLASSES_HELD} classes held</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Below {ATTENDANCE_MINIMUM}% attendance</div>
+                <div className="stat-value" style={{ color: BELOW_MINIMUM.length > 0 ? 'var(--negative)' : undefined }}>
+                  {BELOW_MINIMUM.length}
+                </div>
+                <div className="stat-note">
+                  {BELOW_MINIMUM.length > 0 ? BELOW_MINIMUM.map((r) => r.name).join(', ') : 'Everyone is above the minimum'}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="stat">
+                <div className="stat-label">My attendance</div>
+                <div className="stat-value">{pct1(myRecord.attPct)}</div>
+                <div className="stat-note">{myRecord.attended} of {CLASSES_HELD} classes attended</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">My current total</div>
+                <div className="stat-value">{myRecord.total}<span className="stat-unit">/100</span></div>
+                <div className="stat-note">Status: {myRecord.total >= 90 ? 'Grade A (Exemplary)' : 'Grade B (On track)'}</div>
+              </div>
+            </>
+          )}
         </div>
       </section>
 
@@ -421,74 +462,76 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           {/* Right Column: Announcements Feed */}
           <div className="stack">
 
-            {/* Announcement Composer */}
-            <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
-              {!isComposerExpanded ? (
-                <button type="button" className="composer-open" onClick={() => setIsComposerExpanded(true)}>
-                  {session && (
-                    <span className="avatar" style={{ backgroundColor: getPersonTint(session.name) }} aria-hidden="true">
-                      {session.avatar}
-                    </span>
-                  )}
-                  <span>Announce something to your class…</span>
-                </button>
-              ) : (
-                <form onSubmit={handlePublish} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h2 className="panel-title" style={{ fontSize: '1.25rem' }}>New announcement</h2>
+            {/* Announcement Composer (Only Teachers & CRs; regular students cannot post) */}
+            {canPostAnnouncement && (
+              <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
+                {!isComposerExpanded ? (
+                  <button type="button" className="composer-open" onClick={() => setIsComposerExpanded(true)}>
+                    {session && (
+                      <span className="avatar" style={{ backgroundColor: getPersonTint(session.name) }} aria-hidden="true">
+                        {session.avatar}
+                      </span>
+                    )}
+                    <span>Announce something to your class…</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handlePublish} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <h2 className="panel-title" style={{ fontSize: '1.25rem' }}>New announcement</h2>
 
-                  <label className="field">
-                    <span className="field-label">Title</span>
-                    <input
-                      className="input"
-                      type="text"
-                      name="announcement-title"
-                      autoComplete="off"
-                      value={postTitle}
-                      onChange={(e) => setPostTitle(e.target.value)}
-                      placeholder="e.g. Lab moved to Room 402…"
-                      required
-                    />
-                  </label>
+                    <label className="field">
+                      <span className="field-label">Title</span>
+                      <input
+                        className="input"
+                        type="text"
+                        name="announcement-title"
+                        autoComplete="off"
+                        value={postTitle}
+                        onChange={(e) => setPostTitle(e.target.value)}
+                        placeholder="e.g. Lab moved to Room 402…"
+                        required
+                      />
+                    </label>
 
-                  <label className="field">
-                    <span className="field-label">Message</span>
-                    <textarea
-                      className="textarea"
-                      name="announcement-body"
-                      value={postContent}
-                      onChange={(e) => setPostContent(e.target.value)}
-                      rows={4}
-                      required
-                    />
-                  </label>
+                    <label className="field">
+                      <span className="field-label">Message</span>
+                      <textarea
+                        className="textarea"
+                        name="announcement-body"
+                        value={postContent}
+                        onChange={(e) => setPostContent(e.target.value)}
+                        rows={4}
+                        required
+                      />
+                    </label>
 
-                  {/* External Platform Streaming Toggle */}
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={streamDiscord}
-                      onChange={(e) => setStreamDiscord(e.target.checked)}
-                    />
-                    <span>Also post to <span translate="no">{discordChannel}</span> on Discord and the Messenger group</span>
-                  </label>
+                    {/* External Platform Streaming Toggle */}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={streamDiscord}
+                        onChange={(e) => setStreamDiscord(e.target.checked)}
+                      />
+                      <span>Also post to <span translate="no">{discordChannel}</span> on Discord and the Messenger group</span>
+                    </label>
 
-                  <div className="modal-actions">
-                    <button type="button" className="btn btn-ghost" onClick={() => setIsComposerExpanded(false)}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="btn btn-primary">
-                      Post announcement
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              <div aria-live="polite">
-                {publishFeedback && (
-                  <p className="notice notice-positive" style={{ marginTop: '12px' }}>{publishFeedback}</p>
+                    <div className="modal-actions">
+                      <button type="button" className="btn btn-ghost" onClick={() => setIsComposerExpanded(false)}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        Post announcement
+                      </button>
+                    </div>
+                  </form>
                 )}
+
+                <div aria-live="polite">
+                  {publishFeedback && (
+                    <p className="notice notice-positive" style={{ marginTop: '12px' }}>{publishFeedback}</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stream Feed */}
             {announcements.length === 0 && (
@@ -682,96 +725,237 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           ==================================================================== */}
       {activeTab === 'grades' && (
         <div className="stack">
-          <div className="page-head" style={{ marginBottom: 0 }}>
-            <div>
-              <h2 className="section-title" style={{ marginBottom: 0 }}>Grades & attendance</h2>
-              <p className="page-sub">
-                {BELOW_MINIMUM.length === 0
-                  ? `Everyone is above the ${ATTENDANCE_MINIMUM}% attendance minimum.`
-                  : `${BELOW_MINIMUM.map((r) => `${r.name} (${pct1(r.attPct)})`).join(', ')} ${BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the ${ATTENDANCE_MINIMUM}% attendance minimum.`}
-              </p>
-            </div>
-            <div className="page-actions">
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowAIInsights(!showAIInsights)} aria-expanded={showAIInsights}>
-                {showAIInsights ? 'Hide AI summary' : 'AI summary'}
-              </button>
-              {session?.canEditGrades() && (
-                <button className="btn btn-primary btn-sm" onClick={() => alert('Attendance & marks successfully saved to database transactions!')}>
-                  Save changes
-                </button>
+          {isTeacher ? (
+            /* TEACHER VIEW: OVERALL CLASS REGISTER & ATTENDANCE */
+            <>
+              <div className="page-head" style={{ marginBottom: 0 }}>
+                <div>
+                  <h2 className="section-title" style={{ marginBottom: 0 }}>Grades & attendance (Class Register)</h2>
+                  <p className="page-sub">
+                    {BELOW_MINIMUM.length === 0
+                      ? `Everyone is above the ${ATTENDANCE_MINIMUM}% attendance minimum.`
+                      : `${BELOW_MINIMUM.map((r) => `${r.name} (${pct1(r.attPct)})`).join(', ')} ${BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the ${ATTENDANCE_MINIMUM}% attendance minimum.`}
+                  </p>
+                </div>
+                <div className="page-actions">
+                  <button className="btn btn-secondary btn-sm" onClick={() => setShowAIInsights(!showAIInsights)} aria-expanded={showAIInsights}>
+                    {showAIInsights ? 'Hide AI summary' : 'AI summary'}
+                  </button>
+                  {session?.canEditGrades() && (
+                    <button className="btn btn-primary btn-sm" onClick={() => alert('Attendance & marks successfully saved to database transactions!')}>
+                      Save changes
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* AI summary, built from the same rows as the table */}
+              {showAIInsights && (
+                <section className="panel" aria-labelledby="ai-summary-title">
+                  <h3 id="ai-summary-title" className="panel-title" style={{ fontSize: '1.2rem', marginBottom: '6px' }}>AI summary</h3>
+                  <p style={{ maxWidth: '72ch' }}>
+                    The class averages <span className="num">{AVERAGE_TOTAL.toFixed(1)}</span> of 100 so far, and attendance averages{' '}
+                    <span className="num">{pct1(AVERAGE_ATTENDANCE)}</span> over {CLASSES_HELD} classes.
+                    {BELOW_MINIMUM.length > 0 && (
+                      <> {BELOW_MINIMUM.map((r) => `${r.name} (roll ${r.roll})`).join(', ')} {BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the ${ATTENDANCE_MINIMUM}% minimum; a counselling reminder is waiting for your approval.</>
+                    )}
+                  </p>
+                </section>
               )}
-            </div>
-          </div>
 
-          {/* AI summary, built from the same rows as the table */}
-          {showAIInsights && (
-            <section className="panel" aria-labelledby="ai-summary-title">
-              <h3 id="ai-summary-title" className="panel-title" style={{ fontSize: '1.2rem', marginBottom: '6px' }}>AI summary</h3>
-              <p style={{ maxWidth: '72ch' }}>
-                The class averages <span className="num">{AVERAGE_TOTAL.toFixed(1)}</span> of 100 so far, and attendance averages{' '}
-                <span className="num">{pct1(AVERAGE_ATTENDANCE)}</span> over {CLASSES_HELD} classes.
-                {BELOW_MINIMUM.length > 0 && (
-                  <> {BELOW_MINIMUM.map((r) => `${r.name} (roll ${r.roll})`).join(', ')} {BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the {ATTENDANCE_MINIMUM}% minimum; a counselling reminder is waiting for your approval.</>
-                )}
-              </p>
-            </section>
-          )}
+              <div className="panel" style={{ paddingTop: '8px', paddingBottom: '8px' }}>
+                <div className="table-wrap">
+                  <table className="table" style={{ minWidth: '760px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '48px' }}>Roll</th>
+                        <th>Student</th>
+                        <th className="num">Attendance <span className="muted">(min {ATTENDANCE_MINIMUM}%)</span></th>
+                        <th className="num">Assignment /30</th>
+                        <th className="num">Quiz /20</th>
+                        <th className="num">Midterm /50</th>
+                        <th className="num">Total /100</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {GRADEBOOK.map((row) => {
+                        const isShort = row.attPct < ATTENDANCE_MINIMUM;
+                        return (
+                          <tr key={row.roll}>
+                            <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{row.roll}</td>
+                            <td>
+                              <span style={{ fontWeight: 500 }}>{row.name}</span>
+                              <span className="cell-sub">{row.role}</span>
+                            </td>
+                            <td className="num">
+                              <div className="attend" title={`${row.attended} of ${CLASSES_HELD} classes`}>
+                                <span className="attend-track" aria-hidden="true">
+                                  <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${row.attPct}%` }} />
+                                  <span className="attend-min" style={{ left: `${ATTENDANCE_MINIMUM}%` }} />
+                                </span>
+                                <span className="attend-value" style={{ color: isShort ? 'var(--negative)' : undefined }}>
+                                  {pct1(row.attPct)}
+                                </span>
+                              </div>
+                              <span className="cell-sub">{row.attended} of {CLASSES_HELD}</span>
+                            </td>
+                            <td className="num">{row.assign}</td>
+                            <td className="num">{row.quiz}</td>
+                            <td className="num">{row.mid}</td>
+                            <td className="num" style={{ fontWeight: 600 }}>{row.total}</td>
+                            <td>
+                              {isShort ? (
+                                <span className="pill pill-negative">Attendance risk</span>
+                              ) : (
+                                <span className="muted">{row.total >= 90 ? 'Exemplary' : 'On track'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            /* STUDENT VIEW: ONLY PERSONAL GRADES & ATTENDANCE (DUMMY PREVIEW) */
+            <>
+              <div className="page-head" style={{ marginBottom: 0 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h2 className="section-title" style={{ marginBottom: 0 }}>My grades & attendance</h2>
+                    <span className="pill pill-warning" style={{ fontSize: '0.72rem' }}>Personal Record · Preview mode</span>
+                  </div>
+                  <p className="page-sub">
+                    Your personal academic marks and semester attendance tracking for {course.code}.
+                  </p>
+                </div>
+              </div>
 
-          <div className="panel" style={{ paddingTop: '8px', paddingBottom: '8px' }}>
-            <div className="table-wrap">
-              <table className="table" style={{ minWidth: '760px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '48px' }}>Roll</th>
-                    <th>Student</th>
-                    <th className="num">Attendance <span className="muted">(min {ATTENDANCE_MINIMUM}%)</span></th>
-                    <th className="num">Assignment /30</th>
-                    <th className="num">Quiz /20</th>
-                    <th className="num">Midterm /50</th>
-                    <th className="num">Total /100</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {GRADEBOOK.map((row) => {
-                    const isShort = row.attPct < ATTENDANCE_MINIMUM;
-                    return (
-                      <tr key={row.roll}>
-                        <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{row.roll}</td>
+              {/* Student Summary Stat Strip */}
+              <div className="stat-strip">
+                <div className="stat">
+                  <div className="stat-label">My attendance</div>
+                  <div className="stat-value">{pct1(myRecord.attPct)}</div>
+                  <div className="stat-note">
+                    {myRecord.attPct >= ATTENDANCE_MINIMUM ? (
+                      <span style={{ color: 'var(--positive, #10b981)' }}>Safe · Above {ATTENDANCE_MINIMUM}% requirement</span>
+                    ) : (
+                      <span style={{ color: 'var(--negative)' }}>Below {ATTENDANCE_MINIMUM}% minimum</span>
+                    )}
+                  </div>
+                  <div className="bar" style={{ marginTop: '8px', maxWidth: '180px' }} aria-hidden="true">
+                    <div className="bar-fill" style={{ width: `${myRecord.attPct}%` }} />
+                  </div>
+                </div>
+
+                <div className="stat">
+                  <div className="stat-label">Lectures attended</div>
+                  <div className="stat-value">{myRecord.attended} <span className="stat-unit">/ {CLASSES_HELD}</span></div>
+                  <div className="stat-note">Classes held this semester</div>
+                </div>
+
+                <div className="stat">
+                  <div className="stat-label">Current total score</div>
+                  <div className="stat-value">{myRecord.total} <span className="stat-unit">/ 100</span></div>
+                  <div className="stat-note">Projected Grade: {myRecord.total >= 90 ? 'A (Exemplary)' : 'B (Good)'}</div>
+                </div>
+
+                <div className="stat">
+                  <div className="stat-label">Academic standing</div>
+                  <div className="stat-value" style={{ fontSize: '1.25rem', color: myRecord.attPct < ATTENDANCE_MINIMUM ? 'var(--negative)' : 'var(--accent)' }}>
+                    {myRecord.attPct < ATTENDANCE_MINIMUM ? 'Attendance Risk' : 'In good standing'}
+                  </div>
+                  <div className="stat-note">Continuous evaluation active</div>
+                </div>
+              </div>
+
+              {/* Student Individual Score Breakdown */}
+              <div className="panel">
+                <div className="panel-head" style={{ marginBottom: '12px' }}>
+                  <h3 className="panel-title" style={{ fontSize: '1.25rem' }}>Personal assessment breakdown</h3>
+                  <span className="panel-note num">Student: {myRecord.name} (Roll {myRecord.roll})</span>
+                </div>
+
+                <div className="table-wrap">
+                  <table className="table" style={{ minWidth: '600px' }}>
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th className="num">Marks Scored</th>
+                        <th className="num">Weighting</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
                         <td>
-                          <span style={{ fontWeight: 500 }}>{row.name}</span>
-                          <span className="cell-sub">{row.role}</span>
+                          <span style={{ fontWeight: 500 }}>Classroom Attendance</span>
+                          <span className="cell-sub">{myRecord.attended} of {CLASSES_HELD} classes attended ({pct1(myRecord.attPct)})</span>
                         </td>
-                        <td className="num">
-                          <div className="attend" title={`${row.attended} of ${CLASSES_HELD} classes`}>
-                            <span className="attend-track" aria-hidden="true">
-                              <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${row.attPct}%` }} />
-                              <span className="attend-min" style={{ left: `${ATTENDANCE_MINIMUM}%` }} />
-                            </span>
-                            <span className="attend-value" style={{ color: isShort ? 'var(--negative)' : undefined }}>
-                              {pct1(row.attPct)}
-                            </span>
-                          </div>
-                          <span className="cell-sub">{row.attended} of {CLASSES_HELD}</span>
-                        </td>
-                        <td className="num">{row.assign}</td>
-                        <td className="num">{row.quiz}</td>
-                        <td className="num">{row.mid}</td>
-                        <td className="num" style={{ fontWeight: 600 }}>{row.total}</td>
+                        <td className="num">{Math.round((myRecord.attended / CLASSES_HELD) * 10)} / 10</td>
+                        <td className="num">10%</td>
                         <td>
-                          {isShort ? (
-                            <span className="pill pill-negative">Attendance risk</span>
+                          {myRecord.attPct >= ATTENDANCE_MINIMUM ? (
+                            <span className="pill pill-positive">Requirement met</span>
                           ) : (
-                            <span className="muted">{row.total >= 90 ? 'Exemplary' : 'On track'}</span>
+                            <span className="pill pill-negative">Below 75% minimum</span>
                           )}
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+
+                      <tr>
+                        <td>
+                          <span style={{ fontWeight: 500 }}>Assignments & Laboratory</span>
+                          <span className="cell-sub">SRS document, UML diagrams & codebase submissions</span>
+                        </td>
+                        <td className="num">{myRecord.assign} / 30</td>
+                        <td className="num">30%</td>
+                        <td><span className="status-chip chip-verified">Graded</span></td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <span style={{ fontWeight: 500 }}>Formative Quizzes</span>
+                          <span className="cell-sub">Lecture pattern quizzes and formative drills</span>
+                        </td>
+                        <td className="num">{myRecord.quiz} / 20</td>
+                        <td className="num">20%</td>
+                        <td><span className="status-chip chip-verified">Graded</span></td>
+                      </tr>
+
+                      <tr>
+                        <td>
+                          <span style={{ fontWeight: 500 }}>Midterm Exam</span>
+                          <span className="cell-sub">Architecture and design pattern analysis</span>
+                        </td>
+                        <td className="num">{myRecord.mid} / 50</td>
+                        <td className="num">40%</td>
+                        <td><span className="status-chip chip-verified">Graded</span></td>
+                      </tr>
+
+                      <tr style={{ fontWeight: 600, background: 'var(--raised)' }}>
+                        <td>Total Continuous Score</td>
+                        <td className="num">{myRecord.total} / 100</td>
+                        <td className="num">100%</td>
+                        <td>
+                          <span style={{ color: myRecord.total >= 90 ? 'var(--positive, #10b981)' : 'var(--text)' }}>
+                            {myRecord.total >= 90 ? 'Grade A (Exemplary)' : 'Grade B'}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="muted" style={{ fontSize: '0.8rem', marginTop: '16px', lineHeight: 1.5 }}>
+                  * Note: The student gradebook is currently operating in preview mode with simulated dummy data until final examinations are graded and verified by the university registrar.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       )}
 

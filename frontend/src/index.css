@@ -727,17 +727,18 @@ input, select, textarea {
   flex: 1 1 0;
   text-align: center;
   position: relative;
-  height: 44px;
-  padding: 0 2px;
+  height: 52px;
+  padding: 0 14px;
   background: none;
   border: none;
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
+  color: #4b5563;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.12s ease;
-  font-family: var(--font-display);
+  transition: color 0.15s ease, font-weight 0.15s ease;
+  font-family: var(--font-heading);
 }
 
 .tab:hover {
@@ -746,6 +747,8 @@ input, select, textarea {
 
 .tab[aria-selected='true'] {
   color: var(--text);
+  font-weight: 700;
+  font-size: 1.15rem;
 }
 
 .tab[aria-selected='true']::after {
@@ -754,7 +757,8 @@ input, select, textarea {
   left: 0;
   right: 0;
   bottom: -1px;
-  height: 2px;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
   background: var(--text);
 }
 

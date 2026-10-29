@@ -196,8 +196,8 @@ class CourseService:
         user: dict,
         session: AsyncSession | None = None,
     ) -> dict:
-        if user["role"] != "student":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students can join courses")
+        if user["role"] not in ("student", "teacher", "cr"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students and teachers can join courses")
         if session is not None:
             repository = CourseRepository(session)
             matched_id = await repository.find_by_class_code(class_code)
@@ -205,13 +205,13 @@ class CourseService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class code")
             await repository.enroll(course_id, user["user_id"])
             await session.commit()
-            return {"course_id": course_id, "role": "student"}
+            return {"course_id": course_id, "role": user["role"]}
 
         course = CourseService._get_course(course_id)
         if not secrets.compare_digest(course["class_code"], class_code):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class code")
         InMemoryStore.memberships.add((course_id, user["email"]))
-        return {"course_id": course_id, "role": "student"}
+        return {"course_id": course_id, "role": user["role"]}
 
     @staticmethod
     async def join_by_code(
@@ -219,8 +219,8 @@ class CourseService:
         user: dict,
         session: AsyncSession | None = None,
     ) -> dict:
-        if user["role"] != "student":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students can join courses")
+        if user["role"] not in ("student", "teacher", "cr"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students and teachers can join courses")
 
         if session is not None:
             course_id = await CourseRepository(session).find_by_class_code(class_code)
@@ -228,7 +228,7 @@ class CourseService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
             await CourseRepository(session).enroll(course_id, user["user_id"])
             await session.commit()
-            return {"course_id": course_id, "role": "student"}
+            return {"course_id": course_id, "role": user["role"]}
 
         course = next(
             (
@@ -240,7 +240,7 @@ class CourseService:
         if course is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
         InMemoryStore.memberships.add((course["course_id"], user["email"]))
-        return {"course_id": course["course_id"], "role": "student"}
+        return {"course_id": course["course_id"], "role": user["role"]}
 
     @staticmethod
     async def list_members(
@@ -311,6 +311,39 @@ class CourseService:
         if user["role"] != "teacher" or course["teacher_email"] != user["email"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course owner access required")
         return course
+
+    @staticmethod
+    async def require_course_announcement_author(
+        course_id: int,
+        user: dict,
+        session: AsyncSession | None = None,
+    ) -> dict:
+        if session is not None:
+            course = await CourseRepository(session).get_by_id(course_id)
+            if course is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            if user["role"] == "teacher":
+                if course["teacher_id"] == user["user_id"] or await CourseRepository(session).is_enrolled(course_id, user["user_id"]):
+                    return course
+            elif user["role"] == "cr":
+                if await CourseRepository(session).is_enrolled(course_id, user["user_id"]):
+                    return course
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only course teachers and Class Representatives (CR) can post announcements",
+            )
+
+        course = CourseService._get_course(course_id)
+        if user["role"] == "teacher":
+            if course["teacher_email"] == user["email"] or (course_id, user["email"]) in InMemoryStore.memberships:
+                return course
+        elif user["role"] == "cr":
+            if (course_id, user["email"]) in InMemoryStore.memberships:
+                return course
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only course teachers and Class Representatives (CR) can post announcements",
+        )
 
     @staticmethod
     def _get_course(course_id: int) -> dict:

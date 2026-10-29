@@ -61,9 +61,7 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
   const showCourses = !!session && session.role !== 'admin';
   const courses = !session || !showCourses
     ? []
-    : session.role === 'student'
-      ? facade.getEnrolledCoursesForStudent(session.email)
-      : facade.getCourses();
+    : facade.getCoursesForUser(session);
 
   return (
     <aside className={`app-side${isOpen ? ' is-open' : ''}`} id="app-nav">

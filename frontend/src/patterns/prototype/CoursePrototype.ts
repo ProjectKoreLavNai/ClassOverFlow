@@ -49,6 +49,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
   public tags: string[];
   public createdAt: string;
   public enrolledStudents: EnrolledStudent[];
+  public instructorEmail?: string;
 
   constructor(
     code: string,
@@ -64,7 +65,8 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     duePreview: string = '',
     tags: string[] = [],
     createdAt?: string,
-    enrolledStudents: EnrolledStudent[] = []
+    enrolledStudents: EnrolledStudent[] = [],
+    instructorEmail?: string
   ) {
     this.code = code;
     this.title = title;
@@ -80,6 +82,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     this.tags = tags;
     this.createdAt = createdAt || new Date().toISOString();
     this.enrolledStudents = enrolledStudents;
+    this.instructorEmail = instructorEmail;
   }
 
   /**
@@ -113,7 +116,8 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
       'No pending submissions yet (New Course)',
       [...this.tags],
       new Date().toISOString(),
-      [] // Reset enrolled students roster
+      [], // Reset enrolled students roster
+      this.instructorEmail
     );
   }
 
@@ -126,6 +130,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     if (newCode) clone.code = newCode;
     clone.title = newCohortTitle;
     clone.term = newTerm;
+    clone.instructorEmail = this.instructorEmail;
     return clone;
   }
 }

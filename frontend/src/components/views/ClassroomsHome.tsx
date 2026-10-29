@@ -47,7 +47,8 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
   const { session, setViolation } = useAuth();
   const facade = ClassroomAcademicFacade.getInstance();
 
-  const [courses, setCourses] = useState<CourseBlueprint[]>(facade.getCourses());
+  const [, setRenderTrigger] = useState(0);
+  const refreshCourses = () => setRenderTrigger((n) => n + 1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinPrefillCode, setJoinPrefillCode] = useState('');
@@ -75,14 +76,13 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
   };
 
   const isStudent = session?.role === 'student';
-  const enrolledCourses = session ? facade.getEnrolledCoursesForStudent(session.email) : [];
-  // For students, ONLY enrolled courses can be seen or accessed
-  const displayedCourses = isStudent ? enrolledCourses : courses;
+  const displayedCourses = session ? facade.getCoursesForUser(session) : [];
 
   // If a course is selected, render the Course Detail Workspace
   const selectedCourse = selectedCode ? facade.getCourseByCode(selectedCode) ?? null : null;
-  // For students, ONLY enrolled courses can be opened
-  const isBlocked = !!selectedCourse && isStudent && !facade.isStudentEnrolled(selectedCourse.code, session?.email);
+  // Check if user has permission to open this course (creator, enrolled student, or joined teacher)
+  const hasAccess = selectedCourse && session ? facade.canUserAccessCourse(selectedCourse.code, session) : false;
+  const isBlocked = !!selectedCourse && !hasAccess;
   useEffect(() => {
     if (isBlocked || (selectedCode && !selectedCourse)) onSelectCode(null);
   }, [isBlocked, selectedCode, selectedCourse, onSelectCode]);
@@ -93,11 +93,11 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         course={selectedCourse}
         onBack={() => {
           onSelectCode(null);
-          setCourses(facade.getCourses());
+          refreshCourses();
         }}
         onCourseUpdated={(updated) => {
           onSelectCode(updated.code);
-          setCourses(facade.getCourses());
+          refreshCourses();
         }}
       />
     );
@@ -110,14 +110,14 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
       {/* Title & Action Bar */}
       <div className="page-head">
         <div>
-          <h1 className="page-title">{isStudent ? 'My classrooms' : 'All classrooms'}</h1>
+          <h1 className="page-title">{isStudent || session?.role === 'teacher' ? 'My classrooms' : 'All classrooms'}</h1>
           <p className="page-sub">
             {courseCount === 1 ? '1 course' : `${courseCount} courses`} this semester
           </p>
         </div>
 
         <div className="page-actions">
-          {/* Join Course for students / scholars */}
+          {/* Join Course for students, CRs, and teachers */}
           {session?.canJoinCourse() && (
             <button className="btn btn-primary" onClick={handleJoinCourseClick} id="btn-join-course-home">
               <UserPlus size={16} aria-hidden="true" />
@@ -137,14 +137,26 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
 
       {displayedCourses.length === 0 ? (
         <div className="panel" style={{ maxWidth: '560px' }}>
-          <h2 className="panel-title">You haven't joined a course yet</h2>
+          <h2 className="panel-title">
+            {session?.role === 'teacher' ? "You don't have any courses yet" : "You haven't joined a course yet"}
+          </h2>
           <p className="muted" style={{ margin: '6px 0 16px' }}>
-            Ask your teacher or CR for the class code, then join with it here.
+            {session?.role === 'teacher'
+              ? 'Create a new course for your class, or join another teacher\'s course with a class code.'
+              : 'Ask your teacher or CR for the class code, then join with it here.'}
           </p>
-          <button className="btn btn-primary" onClick={handleJoinCourseClick}>
-            <UserPlus size={16} aria-hidden="true" />
-            <span>Join with a class code</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={handleJoinCourseClick}>
+              <UserPlus size={16} aria-hidden="true" />
+              <span>Join with a class code</span>
+            </button>
+            {session?.canCreateCourse() && (
+              <button className="btn btn-secondary" onClick={handleCreateCourseClick}>
+                <Plus size={16} aria-hidden="true" />
+                <span>Create course</span>
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <ul className="course-grid" style={{ listStyle: 'none' }}>
@@ -247,7 +259,7 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreated={(newCourse) => {
-          setCourses(facade.getCourses());
+          refreshCourses();
           onSelectCode(newCourse.code);
         }}
       />
@@ -259,7 +271,7 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
           isOpen={!!courseToClone}
           onClose={() => setCourseToClone(null)}
           onCloned={(cloned) => {
-            setCourses(facade.getCourses());
+            refreshCourses();
             onSelectCode(cloned.code);
           }}
         />
@@ -271,7 +283,7 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         initialCode={joinPrefillCode}
         onClose={() => setIsJoinOpen(false)}
         onJoined={(joinedCourse) => {
-          setCourses(facade.getCourses());
+          refreshCourses();
           onSelectCode(joinedCourse.code);
         }}
       />
