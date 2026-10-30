@@ -116,7 +116,8 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
       'No pending submissions yet (New Course)',
       [...this.tags],
       new Date().toISOString(),
-      [] // Reset enrolled students roster
+      [], // Reset enrolled students roster
+      this.instructorEmail
     );
   }
 
@@ -129,6 +130,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     if (newCode) clone.code = newCode;
     clone.title = newCohortTitle;
     clone.term = newTerm;
+    clone.instructorEmail = this.instructorEmail;
     return clone;
   }
 }

@@ -46,8 +46,13 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
   const { session, setViolation } = useAuth();
   const facade = ClassroomAcademicFacade.getInstance();
 
+<<<<<<< HEAD
   const [courses, setCourses] = useState<CourseBlueprint[]>(facade.getCourses());
   const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
+=======
+  const [, setRenderTrigger] = useState(0);
+  const refreshCourses = () => setRenderTrigger((n) => n + 1);
+>>>>>>> 9d24ba058ffd8b31c9a0ee29f88b48a7e6158cc5
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinPrefillCode, setJoinPrefillCode] = useState('');
@@ -106,11 +111,11 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         course={selectedCourse}
         onBack={() => {
           onSelectCode(null);
-          setCourses(facade.getCourses());
+          refreshCourses();
         }}
         onCourseUpdated={(updated) => {
           onSelectCode(updated.code);
-          setCourses(facade.getCourses());
+          refreshCourses();
         }}
       />
     );
@@ -123,14 +128,14 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
       {/* Title & Action Bar */}
       <div className="page-head">
         <div>
-          <h1 className="page-title">{isStudent ? 'My classrooms' : 'All classrooms'}</h1>
+          <h1 className="page-title">{isStudent || session?.role === 'teacher' ? 'My classrooms' : 'All classrooms'}</h1>
           <p className="page-sub">
             {courseCount === 1 ? '1 course' : `${courseCount} courses`} this semester
           </p>
         </div>
 
         <div className="page-actions">
-          {/* Join Course for students / scholars */}
+          {/* Join Course for students, CRs, and teachers */}
           {session?.canJoinCourse() && (
             <button className="btn btn-primary" onClick={handleJoinCourseClick} id="btn-join-course-home">
               <UserPlus size={16} aria-hidden="true" />
@@ -247,7 +252,7 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         onCreated={(newCourse) => {
-          setCourses(facade.getCourses());
+          refreshCourses();
           onSelectCode(newCourse.code);
         }}
       />
@@ -258,7 +263,7 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
         initialCode={joinPrefillCode}
         onClose={() => setIsJoinOpen(false)}
         onJoined={(joinedCourse) => {
-          setCourses(facade.getCourses());
+          refreshCourses();
           onSelectCode(joinedCourse.code);
         }}
       />

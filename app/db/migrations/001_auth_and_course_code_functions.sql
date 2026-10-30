@@ -198,7 +198,9 @@ LANGUAGE sql
 SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
-    SELECT u.user_id, u.role, s.full_name, s.username, s.email, s.password_hash
+    SELECT u.user_id,
+           CASE WHEN s.cr_status THEN 'CR'::varchar ELSE u.role END AS role,
+           s.full_name, s.username, s.email, s.password_hash
     FROM public.users u
     JOIN public.students s ON s.student_id = u.user_id
     WHERE u.role = 'STUDENT' AND lower(s.email) = lower(p_email)

@@ -359,6 +359,39 @@ class CourseService:
         return course
 
     @staticmethod
+    async def require_course_announcement_author(
+        course_id: int,
+        user: dict,
+        session: AsyncSession | None = None,
+    ) -> dict:
+        if session is not None:
+            course = await CourseRepository(session).get_by_id(course_id)
+            if course is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            if user["role"] == "teacher":
+                if course["teacher_id"] == user["user_id"] or await CourseRepository(session).is_enrolled(course_id, user["user_id"]):
+                    return course
+            elif user["role"] == "cr":
+                if await CourseRepository(session).is_enrolled(course_id, user["user_id"]):
+                    return course
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only course teachers and Class Representatives (CR) can post announcements",
+            )
+
+        course = CourseService._get_course(course_id)
+        if user["role"] == "teacher":
+            if course["teacher_email"] == user["email"] or (course_id, user["email"]) in InMemoryStore.memberships:
+                return course
+        elif user["role"] == "cr":
+            if (course_id, user["email"]) in InMemoryStore.memberships:
+                return course
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only course teachers and Class Representatives (CR) can post announcements",
+        )
+
+    @staticmethod
     def _get_course(course_id: int) -> dict:
         course = InMemoryStore.courses.get(course_id)
         if course is None:

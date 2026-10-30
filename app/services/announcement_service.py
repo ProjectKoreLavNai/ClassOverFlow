@@ -17,7 +17,7 @@ class AnnouncementService:
         author: dict,
         session: AsyncSession | None = None,
     ) -> dict:
-        await CourseService.require_course_owner(course_id, author, session)
+        await CourseService.require_course_announcement_author(course_id, author, session)
         if session is not None:
             announcement = await AnnouncementRepository(session).create(
                 course_id=course_id,

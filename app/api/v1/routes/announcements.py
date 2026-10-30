@@ -63,7 +63,7 @@ async def list_announcements(
 async def create_announcement(
     course_id: int,
     payload: AnnouncementCreate,
-    user: dict = Depends(require_roles("teacher")),
+    user: dict = Depends(require_roles("teacher", "cr")),
     session: AsyncSession | None = Depends(get_db_with_user_context),
 ):
     announcement = await AnnouncementService.create_announcement(course_id, payload, user, session)

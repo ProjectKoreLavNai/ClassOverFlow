@@ -580,74 +580,76 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           <div className="stack">
             {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
 
-            {/* Announcement Composer */}
-            <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
-              {!isComposerExpanded ? (
-                <button type="button" className="composer-open" onClick={() => setIsComposerExpanded(true)}>
-                  {session && (
-                    <span className="avatar" style={{ backgroundColor: getPersonTint(session.name) }} aria-hidden="true">
-                      {session.avatar}
-                    </span>
-                  )}
-                  <span>Announce something to your class…</span>
-                </button>
-              ) : (
-                <form onSubmit={handlePublish} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <h2 className="panel-title" style={{ fontSize: '1.25rem' }}>New announcement</h2>
+            {/* Announcement Composer (Only Teachers & CRs; regular students cannot post) */}
+            {canPostAnnouncement && (
+              <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
+                {!isComposerExpanded ? (
+                  <button type="button" className="composer-open" onClick={() => setIsComposerExpanded(true)}>
+                    {session && (
+                      <span className="avatar" style={{ backgroundColor: getPersonTint(session.name) }} aria-hidden="true">
+                        {session.avatar}
+                      </span>
+                    )}
+                    <span>Announce something to your class…</span>
+                  </button>
+                ) : (
+                  <form onSubmit={handlePublish} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <h2 className="panel-title" style={{ fontSize: '1.25rem' }}>New announcement</h2>
 
-                  <label className="field">
-                    <span className="field-label">Title</span>
-                    <input
-                      className="input"
-                      type="text"
-                      name="announcement-title"
-                      autoComplete="off"
-                      value={postTitle}
-                      onChange={(e) => setPostTitle(e.target.value)}
-                      placeholder="e.g. Lab moved to Room 402…"
-                      required
-                    />
-                  </label>
+                    <label className="field">
+                      <span className="field-label">Title</span>
+                      <input
+                        className="input"
+                        type="text"
+                        name="announcement-title"
+                        autoComplete="off"
+                        value={postTitle}
+                        onChange={(e) => setPostTitle(e.target.value)}
+                        placeholder="e.g. Lab moved to Room 402…"
+                        required
+                      />
+                    </label>
 
-                  <label className="field">
-                    <span className="field-label">Message</span>
-                    <textarea
-                      className="textarea"
-                      name="announcement-body"
-                      value={postContent}
-                      onChange={(e) => setPostContent(e.target.value)}
-                      rows={4}
-                      required
-                    />
-                  </label>
+                    <label className="field">
+                      <span className="field-label">Message</span>
+                      <textarea
+                        className="textarea"
+                        name="announcement-body"
+                        value={postContent}
+                        onChange={(e) => setPostContent(e.target.value)}
+                        rows={4}
+                        required
+                      />
+                    </label>
 
-                  {/* External Platform Streaming Toggle */}
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={streamDiscord}
-                      onChange={(e) => setStreamDiscord(e.target.checked)}
-                    />
-                    <span>Also post to <span translate="no">{discordChannel}</span> on Discord and the Messenger group</span>
-                  </label>
+                    {/* External Platform Streaming Toggle */}
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={streamDiscord}
+                        onChange={(e) => setStreamDiscord(e.target.checked)}
+                      />
+                      <span>Also post to <span translate="no">{discordChannel}</span> on Discord and the Messenger group</span>
+                    </label>
 
-                  <div className="modal-actions">
-                    <button type="button" className="btn btn-ghost" onClick={() => setIsComposerExpanded(false)}>
-                      Cancel
-                    </button>
-                    <button type="submit" className="btn btn-primary">
-                      Post announcement
-                    </button>
-                  </div>
-                </form>
-              )}
-
-              <div aria-live="polite">
-                {publishFeedback && (
-                  <p className="notice notice-positive" style={{ marginTop: '12px' }}>{publishFeedback}</p>
+                    <div className="modal-actions">
+                      <button type="button" className="btn btn-ghost" onClick={() => setIsComposerExpanded(false)}>
+                        Cancel
+                      </button>
+                      <button type="submit" className="btn btn-primary">
+                        Post announcement
+                      </button>
+                    </div>
+                  </form>
                 )}
+
+                <div aria-live="polite">
+                  {publishFeedback && (
+                    <p className="notice notice-positive" style={{ marginTop: '12px' }}>{publishFeedback}</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stream Feed */}
             {announcements.length === 0 && (
@@ -947,8 +949,8 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                         ))}
                         <td className="num" style={{ fontWeight: 600 }}>{total}</td>
                         <td>
-                          {isShort ? (
-                            <span className="pill pill-negative">Attendance risk</span>
+                          {myRecord.attPct >= ATTENDANCE_MINIMUM ? (
+                            <span className="pill pill-positive">Requirement met</span>
                           ) : (
                             <span className="muted">{total >= 90 ? 'Exemplary' : 'On track'}</span>
                           )}

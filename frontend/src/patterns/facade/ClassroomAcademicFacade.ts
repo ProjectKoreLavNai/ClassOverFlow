@@ -89,6 +89,7 @@ export class ClassroomAcademicFacade {
   }
 
   private saveCoursesToStorage(courses: CourseBlueprint[]): void {
+    localStorage.setItem('classoverflow_courses_v2_6', JSON.stringify(courses));
     localStorage.setItem('classoverflow_courses_v2_5', JSON.stringify(courses));
     localStorage.setItem('classoverflow_courses_v2_4', JSON.stringify(courses));
   }
@@ -156,6 +157,15 @@ export class ClassroomAcademicFacade {
   ): { success: boolean; message: string; announcement?: CourseAnnouncement } {
     if (!title.trim() || !content.trim()) {
       return { success: false, message: 'Announcement title and content cannot be empty.' };
+    }
+
+    if (!this.canUserPostAnnouncement(courseCode, session)) {
+      return {
+        success: false,
+        message: session.role === 'student'
+          ? 'Students do not have authority to post announcements. Only Teachers and Class Representatives (CR) can post.'
+          : 'You do not have authority to post announcements in this course.'
+      };
     }
 
     const newAnnouncement: CourseAnnouncement = {
@@ -240,6 +250,7 @@ export class ClassroomAcademicFacade {
     // Prototype Pattern invocation
     const cloned = source.cloneForNewCohort(newCourseTitle, newTerm, newCode);
     cloned.instructor = session.name;
+    cloned.instructorEmail = session.email;
     this.courses.unshift(cloned);
     this.saveCoursesToStorage(this.courses);
 
@@ -305,7 +316,10 @@ export class ClassroomAcademicFacade {
       { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
       'Section A • Room 402 • 3.0 Credits',
       'No pending submissions yet',
-      ['AI Assisted']
+      ['AI Assisted'],
+      new Date().toISOString(),
+      [],
+      session.email
     );
 
     this.courses.unshift(newCourse);
@@ -412,12 +426,22 @@ export class ClassroomAcademicFacade {
       };
     }
 
+    // If teacher is the creator of the course, prevent redundant join
+    if (session.role === 'teacher' && this.isTeacherCreator(course, session)) {
+      return {
+        success: false,
+        alreadyEnrolled: true,
+        course,
+        message: `You are already the primary instructor and creator of ${course.code}.`
+      };
+    }
+
     // Ensure enrolled roster array is initialized
     if (!course.enrolledStudents) {
       course.enrolledStudents = [];
     }
 
-    // Check if already enrolled in this course
+    // Check if already enrolled/joined in this course
     const isEnrolled = course.enrolledStudents.some(
       (s) => s.email.toLowerCase() === session.email.toLowerCase() || s.id === session.id
     );
@@ -427,16 +451,18 @@ export class ClassroomAcademicFacade {
         success: false,
         alreadyEnrolled: true,
         course,
-        message: `You are already enrolled in ${course.code}: ${course.title}.`
+        message: session.role === 'teacher'
+          ? `You have already joined ${course.code}: ${course.title}.`
+          : `You are already enrolled in ${course.code}: ${course.title}.`
       };
     }
 
-    // Enroll student in course blueprint
+    // Enroll user in course blueprint (as faculty or student)
     const newStudent: EnrolledStudent = {
       id: session.id,
       name: session.name,
       email: session.email,
-      roll: session.roll || 'N/A',
+      roll: session.roll || (session.role === 'teacher' ? 'Faculty' : 'N/A'),
       avatar: session.avatar,
       joinedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     };
@@ -471,9 +497,21 @@ export class ClassroomAcademicFacade {
 
     return {
       success: true,
-      message: `Successfully joined ${course.code}: ${course.title}!`,
+      message: session.role === 'teacher'
+        ? `Successfully joined ${course.code}: ${course.title} as teacher! You can now post announcements.`
+        : `Successfully joined ${course.code}: ${course.title}!`,
       course
     };
+  }
+
+  public isTeacherCreator(course: CourseBlueprint, session: IUserSession): boolean {
+    if (!session) return false;
+    if (course.instructorEmail && session.email) {
+      if (course.instructorEmail.trim().toLowerCase() === session.email.trim().toLowerCase()) {
+        return true;
+      }
+    }
+    return course.instructor.trim().toLowerCase() === session.name.trim().toLowerCase();
   }
 
   public isStudentEnrolled(courseCode: string, studentEmailOrId?: string): boolean {
@@ -494,6 +532,58 @@ export class ClassroomAcademicFacade {
         (s) => s.email.toLowerCase() === query || s.id.toLowerCase() === query
       )
     );
+  }
+
+  public getCoursesForTeacher(session: IUserSession): CourseBlueprint[] {
+    if (!session) return [];
+    return this.courses.filter((c) => {
+      const isCreator = this.isTeacherCreator(c, session);
+      const hasJoined = (c.enrolledStudents || []).some(
+        (s) => s.email.toLowerCase() === session.email.toLowerCase() || s.id === session.id
+      );
+      return isCreator || hasJoined;
+    });
+  }
+
+  public getCoursesForUser(session: IUserSession | null): CourseBlueprint[] {
+    if (!session) return [];
+    if (session.role === 'student' || session.role === 'cr') {
+      return this.getEnrolledCoursesForStudent(session.email);
+    }
+    if (session.role === 'teacher') {
+      return this.getCoursesForTeacher(session);
+    }
+    return [...this.courses];
+  }
+
+  public canUserAccessCourse(courseCode: string, session: IUserSession | null): boolean {
+    if (!session) return false;
+    if (session.role === 'admin') return true;
+    const course = this.getCourseByCode(courseCode);
+    if (!course) return false;
+    if (session.role === 'teacher') {
+      return this.isTeacherCreator(course, session) || this.isStudentEnrolled(courseCode, session.email);
+    }
+    return this.isStudentEnrolled(courseCode, session.email);
+  }
+
+  public canUserPostAnnouncement(courseCode: string, session: IUserSession | null): boolean {
+    if (!session) return false;
+    const course = this.getCourseByCode(courseCode);
+    if (!course) return false;
+
+    // Teachers can post in courses they created OR courses they joined
+    if (session.role === 'teacher') {
+      return this.isTeacherCreator(course, session) || this.isStudentEnrolled(courseCode, session.email);
+    }
+
+    // Only CR has authority among students to post announcements
+    if (session.role === 'cr') {
+      return this.isStudentEnrolled(courseCode, session.email);
+    }
+
+    // Regular students and other roles cannot post announcements
+    return false;
   }
 
   public getCourseByInvitationId(invitationId: string): CourseBlueprint | undefined {

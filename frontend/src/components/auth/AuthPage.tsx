@@ -272,9 +272,7 @@ export const AuthPage: React.FC = () => {
                   <span className="field-label">Role</span>
                   <select className="select" name="role" value={regRole} onChange={(e) => setRegRole(e.target.value as AcademicRole)}>
                     <option value="student">Student</option>
-                    <option value="cr">Class representative</option>
                     <option value="teacher">Teacher</option>
-                    <option value="admin">Admin</option>
                   </select>
                 </label>
               </div>
