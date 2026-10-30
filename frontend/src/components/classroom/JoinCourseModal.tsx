@@ -3,6 +3,7 @@ import { X, KeyRound, Check, AlertCircle, BookOpen, UserCheck, ArrowRight } from
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { useAuth } from '../../context/AuthContext';
+import api from '../../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
   const [invitationId, setInvitationId] = useState(initialCode);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
   const [matchedCourse, setMatchedCourse] = useState<CourseBlueprint | null>(null);
+  const [isJoining, setIsJoining] = useState(false);
 
   const facade = ClassroomAcademicFacade.getInstance();
 
@@ -45,31 +47,30 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) return;
-
-    const result = facade.joinCourseByInvitationId(invitationId, session);
-
-    if (result.success && result.course) {
+    setIsJoining(true);
+    try {
+      const result = await api.joinCourse(invitationId.trim());
+      await facade.syncWithBackend();
+      const joinedCourse = facade.getCourses().find((course) => course.courseId === result.course_id);
+      if (!joinedCourse) throw new Error('Enrollment succeeded but the course is not available in your course list');
       setFeedback({
         type: 'success',
-        message: result.message
+        message: `Successfully joined ${joinedCourse.code}: ${joinedCourse.title}!`
       });
       setTimeout(() => {
-        onJoined(result.course!);
+        onJoined(joinedCourse);
         onClose();
       }, 1200);
-    } else if (result.alreadyEnrolled) {
-      setFeedback({
-        type: 'info',
-        message: result.message
-      });
-    } else {
+    } catch (error) {
       setFeedback({
         type: 'error',
-        message: result.message
+        message: error instanceof Error ? error.message : 'Unable to join course',
       });
+    } finally {
+      setIsJoining(false);
     }
   };
 
@@ -411,6 +412,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
             <button
               type="submit"
               className="btn btn-primary"
+              disabled={isJoining}
               style={{
                 padding: '0.65rem 1.4rem',
                 display: 'flex',
@@ -418,7 +420,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
                 gap: '0.45rem'
               }}
             >
-              <span>Join Course</span>
+              <span>{isJoining ? 'Joining…' : 'Join Course'}</span>
               <ArrowRight size={16} />
             </button>
           </div>

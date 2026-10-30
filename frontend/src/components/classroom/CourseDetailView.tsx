@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Copy, Check, ExternalLink,
   CheckCircle2, Circle,
@@ -7,11 +7,11 @@ import {
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import type { CourseAnnouncement } from '../../patterns/facade/ClassroomAcademicFacade';
-import { CloneCourseModal } from './CloneCourseModal';
 import { JoinCourseModal } from './JoinCourseModal';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { getCourseTheme, getInitials, getPersonTint } from '../../utils/courseTheme';
+import api, { type BackendAssignment, type BackendGradebook, type BackendMark } from '../../services/api';
 
 interface Props {
   course: CourseBlueprint;
@@ -30,34 +30,7 @@ const COURSE_TABS: Array<{ id: CourseTab; label: string }> = [
   { id: 'aistudio', label: 'AI studio' },
 ];
 
-// Sample gradebook. Percentages, totals and averages below are computed from these rows.
-const CLASSES_HELD = 25;
 const ATTENDANCE_MINIMUM = 75;
-const GRADEBOOK = [
-  { roll: '55', name: 'Daemon Targaryen', role: 'Class Representative', attended: 24, assign: 28, quiz: 19, mid: 47 },
-  { roll: '21', name: 'Gojo Satoru', role: 'QA Specialist', attended: 25, assign: 29, quiz: 18, mid: 46 },
-  { roll: '14', name: 'Kiyotaka Ayanokoji', role: 'Frontend Lead', attended: 23, assign: 27, quiz: 19, mid: 45 },
-  { roll: '03', name: 'Aizen Sosuke', role: 'Backend Engineer', attended: 24, assign: 28, quiz: 20, mid: 48 },
-  { roll: '07', name: 'Farhan Sadik', role: 'Regular Student', attended: 18, assign: 22, quiz: 14, mid: 34 },
-].map((row) => ({
-  ...row,
-  attPct: (row.attended / CLASSES_HELD) * 100,
-  total: row.assign + row.quiz + row.mid,
-}));
-const AVERAGE_ATTENDANCE = (GRADEBOOK.reduce((sum, r) => sum + r.attended, 0) / (GRADEBOOK.length * CLASSES_HELD)) * 100;
-const AVERAGE_TOTAL = GRADEBOOK.reduce((sum, r) => sum + r.total, 0) / GRADEBOOK.length;
-const BELOW_MINIMUM = GRADEBOOK.filter((r) => r.attPct < ATTENDANCE_MINIMUM);
-console.assert(
-  GRADEBOOK.every((r) => r.total === r.assign + r.quiz + r.mid && r.total <= 100),
-  'Gradebook totals must equal their parts'
-);
-
-const UPCOMING = [
-  { kind: 'In-course task', title: 'Software Requirements (SRS)', when: 'Due Friday, 11:59 PM' },
-  { kind: 'Quiz', title: 'Architecture & Use Cases', when: 'Sunday, Oct 26 · 20 marks' },
-  { kind: 'Lab submission', title: 'Database Schema & ERD Model', when: 'Next Wednesday' },
-];
-
 const pct1 = (value: number) => `${value.toFixed(1)}%`;
 
 export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpdated }) => {
@@ -70,7 +43,15 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const [activeTab, setActiveTab] = useState<CourseTab>('stream');
 
   // Announcements
-  const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>(facade.getAnnouncements(course.code));
+  const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
+  const [upcoming, setUpcoming] = useState<BackendAssignment[]>([]);
+  const [gradebook, setGradebook] = useState<BackendGradebook | null>(null);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [attendanceStatuses, setAttendanceStatuses] = useState<Record<number, 'PRESENT' | 'ABSENT'>>({});
+  const [markDrafts, setMarkDrafts] = useState<Record<string, string>>({});
+  const [isSavingGradebook, setIsSavingGradebook] = useState(false);
+  const [gradebookFeedback, setGradebookFeedback] = useState<string | null>(null);
 
   // Composer state
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
@@ -79,12 +60,74 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const [streamDiscord, setStreamDiscord] = useState(true);
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
 
-  // Copy code & Clone modal state
+  // Class code state
   const [copiedCode, setCopiedCode] = useState(false);
-  const [isCloneOpen, setIsCloneOpen] = useState(false);
+  const [classCodeFeedback, setClassCodeFeedback] = useState<string | null>(null);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
 
-  const isEnrolled = session ? facade.isStudentEnrolled(course.code, session.email) : false;
+  const isLearner = session?.role === 'student' || session?.role === 'cr';
+  const isEnrolled = isLearner
+    ? Boolean(course.courseId)
+    : session ? facade.isStudentEnrolled(course.code, session.email) : false;
+
+  const refreshCourseData = async () => {
+    if (!course.courseId) return;
+    try {
+      const [announcementRows, upcomingRows, gradebookData] = await Promise.all([
+        api.listAnnouncements(course.courseId),
+        api.listCourseUpcoming(course.courseId),
+        api.getGradebook(course.courseId),
+      ]);
+      setAnnouncements(announcementRows.map((item) => ({
+        id: String(item.announcement_id),
+        courseCode: course.code,
+        authorName: item.author_email?.split('@')[0] || 'Teacher',
+        authorRole: 'Teacher',
+        authorAvatar: getInitials(item.author_email?.split('@')[0] || 'Teacher'),
+        title: item.title,
+        content: item.content,
+        attachmentTag: '',
+        streamedToDiscord: false,
+        createdAt: item.created_at ? new Date(item.created_at).toLocaleString() : '',
+        likes: 0,
+      })));
+      setUpcoming(upcomingRows);
+      setGradebook(gradebookData);
+      setDataError(null);
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : 'Unable to load course records');
+    }
+  };
+
+  useEffect(() => {
+    void refreshCourseData();
+  }, [course.courseId]);
+
+  useEffect(() => {
+    const selectedSession = gradebook?.sessions.find((item) => item.session_date === attendanceDate);
+    if (selectedSession) {
+      setAttendanceStatuses(Object.fromEntries(
+        selectedSession.records.map((record) => [record.student_id, record.status])
+      ));
+    } else if (gradebook) {
+      setAttendanceStatuses(Object.fromEntries(
+        gradebook.students.map((student) => [student.student_id, 'ABSENT'])
+      ));
+    }
+  }, [attendanceDate, gradebook]);
+
+  const belowMinimum = gradebook?.below_minimum ?? [];
+  const averageAttendance = gradebook?.average_attendance;
+  const averageTotal = gradebook?.students.length
+    ? gradebook.students.reduce((sum, student) => {
+      const marks = student.marks.reduce((total, mark) => total + Number(mark.marks_obtained), 0);
+      return sum + marks;
+    }, 0) / gradebook.students.length
+    : null;
+  const getStudentMark = (marks: BackendMark[], name: string) =>
+    marks.find((mark) => mark.assessment_name.toLowerCase() === name.toLowerCase());
+  const getMarkValue = (studentId: number, name: string, mark?: BackendMark) =>
+    markDrafts[`${studentId}:${name}`] ?? (mark ? String(mark.marks_obtained) : '');
 
   // AI insights card state in gradebook
   const [showAIInsights, setShowAIInsights] = useState(false);
@@ -135,20 +178,18 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
     }, 900);
   };
 
-  const handlePublishPlanToStream = () => {
-    if (!generatedPlan || !session) return;
-    const res = facade.publishAnnouncement(
-      course.code,
-      `AI Lecture Plan: ${planTopic}`,
-      generatedPlan,
-      session,
-      true,
-      'Lecture Plan'
-    );
-    if (res.success) {
-      setAnnouncements(facade.getAnnouncements(course.code));
+  const handlePublishPlanToStream = async () => {
+    if (!generatedPlan || !session || !course.courseId) return;
+    try {
+      await api.createAnnouncement(course.courseId, {
+        title: `AI Lecture Plan: ${planTopic}`,
+        content: generatedPlan,
+      });
+      await refreshCourseData();
       setPlanPublished(true);
       setTimeout(() => setPlanPublished(false), 4000);
+    } catch (error) {
+      setPublishFeedback(error instanceof Error ? error.message : 'Unable to publish lecture plan');
     }
   };
 
@@ -216,34 +257,130 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
     setTimeout(() => setCopiedSummary(false), 3000);
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(course.cohortCode);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      let classCode = course.cohortCode;
+      const generated = !classCode;
+      if (generated) {
+        if (!course.courseId) throw new Error('This course does not have a database ID');
+        const result = await api.generateCourseClassCode(course.courseId);
+        classCode = result.class_code;
+        course.cohortCode = classCode;
+        onCourseUpdated(course);
+      }
+
+      try {
+        await navigator.clipboard.writeText(classCode);
+      } catch {
+        const input = document.createElement('textarea');
+        input.value = classCode;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        let copied = false;
+        try {
+          input.select();
+          copied = document.execCommand('copy');
+        } finally {
+          input.remove();
+        }
+        if (!copied) throw new Error('Clipboard access is unavailable');
+      }
+
+      setCopiedCode(true);
+      setClassCodeFeedback(
+        generated
+          ? 'New class code generated and copied. Any previous code has been replaced.'
+          : 'Class code copied.'
+      );
+      setTimeout(() => {
+        setCopiedCode(false);
+        setClassCodeFeedback(null);
+      }, 3000);
+    } catch (error) {
+      setCopiedCode(false);
+      setClassCodeFeedback(error instanceof Error ? error.message : 'Unable to copy class code');
+    }
   };
 
-  const handlePublish = (e: React.FormEvent) => {
+  const handlePublish = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session) return;
-
-    const res = facade.publishAnnouncement(
-      course.code,
-      postTitle || 'Course Stream Memo',
-      postContent,
-      session,
-      streamDiscord,
-      'Official Announcement'
-    );
-
-    if (res.success && res.announcement) {
-      setAnnouncements(facade.getAnnouncements(course.code));
+    if (!session || !course.courseId) return;
+    try {
+      await api.createAnnouncement(course.courseId, {
+        title: postTitle.trim() || 'Course Stream Memo',
+        content: postContent.trim(),
+      });
+      await refreshCourseData();
       setPostTitle('');
       setPostContent('');
       setIsComposerExpanded(false);
-      setPublishFeedback(res.message);
+      setPublishFeedback('Announcement published to course stream.');
       setTimeout(() => setPublishFeedback(null), 4000);
-    } else {
-      setPublishFeedback(res.message);
+    } catch (error) {
+      setPublishFeedback(error instanceof Error ? error.message : 'Unable to publish announcement');
+    }
+  };
+
+  const handleSaveGradebook = async () => {
+    if (!course.courseId || !gradebook) return;
+    setIsSavingGradebook(true);
+    setGradebookFeedback(null);
+    try {
+      const marksToSave: Array<{
+        mark_id?: number;
+        student_id: number;
+        assessment_name: string;
+        marks_obtained: number;
+        total_marks: number;
+      }> = [];
+      const deleteMarkIds: number[] = [];
+      for (const student of gradebook.students) {
+        for (const assessment of [
+          { name: 'Assignment', total: 30 },
+          { name: 'Quiz', total: 20 },
+          { name: 'Midterm', total: 50 },
+        ]) {
+          const mark = getStudentMark(student.marks, assessment.name);
+          const draft = markDrafts[`${student.student_id}:${assessment.name}`];
+          if (draft === undefined) continue;
+          if (draft.trim() === '') {
+            if (mark) deleteMarkIds.push(mark.mark_id);
+            continue;
+          }
+          const obtained = Number(draft);
+          if (!Number.isFinite(obtained) || obtained < 0 || obtained > assessment.total) {
+            throw new Error(`${assessment.name} marks must be between 0 and ${assessment.total}`);
+          }
+          if (!mark || Number(mark.marks_obtained) !== obtained || Number(mark.total_marks) !== assessment.total) {
+            marksToSave.push({
+              ...(mark ? { mark_id: mark.mark_id } : {}),
+              student_id: student.student_id,
+              assessment_name: assessment.name,
+              marks_obtained: obtained,
+              total_marks: assessment.total,
+            });
+          }
+        }
+      }
+      await api.saveGradebook(course.courseId, {
+        session_date: attendanceDate,
+        attendance: gradebook.students.map((student) => ({
+          student_id: student.student_id,
+          status: attendanceStatuses[student.student_id] || 'ABSENT',
+        })),
+        marks: marksToSave,
+        delete_mark_ids: deleteMarkIds,
+      });
+      setMarkDrafts({});
+      await refreshCourseData();
+      setGradebookFeedback('Attendance and marks saved.');
+    } catch (error) {
+      setGradebookFeedback(error instanceof Error ? error.message : 'Unable to save gradebook');
+      await refreshCourseData();
+    } finally {
+      setIsSavingGradebook(false);
     }
   };
 
@@ -263,7 +400,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const sectionLine = course.sectionInfo.split('•').map((s) => s.trim()).filter((s) => !/credit/i.test(s)).join(' · ');
   const discordChannel = `#${course.code.toLowerCase().replace(/[^a-z0-9]/g, '')}-announcements`;
 
-  if (session?.role === 'student' && !isEnrolled) {
+  if (isLearner && !isEnrolled) {
     return (
       <div className="page">
         <div className="panel" style={{ maxWidth: '560px' }}>
@@ -302,7 +439,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
       {/* Back */}
       <button onClick={onBack} className="btn btn-ghost btn-sm" style={{ marginLeft: '-10px', marginBottom: '12px' }}>
         <ArrowLeft size={15} aria-hidden="true" />
-        <span>{session?.role === 'student' ? 'My classrooms' : 'All classrooms'}</span>
+        <span>{isLearner ? 'My classrooms' : 'All classrooms'}</span>
       </button>
 
       {/* Course header: identity band, then one strip split by dividers */}
@@ -318,32 +455,29 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
           <div className="page-actions">
             {/* Requirement: REMOVE showing classroom code in students account */}
-            {session?.role !== 'student' ? (
+            {session?.role === 'teacher' ? (
               <>
                 <button
-                  onClick={handleCopyCode}
+                  onClick={() => void handleCopyCode()}
                   className="btn btn-secondary btn-sm"
-                  aria-label={`Copy class code ${course.cohortCode}`}
+                  aria-label={course.cohortCode ? `Copy class code ${course.cohortCode}` : 'Generate and copy class code'}
                 >
                   {copiedCode ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-                  <span>Class code</span>
-                  <span className="mono" translate="no">{course.cohortCode}</span>
+                  <span>{course.cohortCode ? 'Class code' : 'Generate class code'}</span>
+                  {course.cohortCode && <span className="mono" translate="no">{course.cohortCode}</span>}
                 </button>
-                {session?.canCreateCourse() && (
-                  <button onClick={() => setIsCloneOpen(true)} className="btn btn-secondary btn-sm">
-                    Duplicate course
-                  </button>
-                )}
-                <span aria-live="polite" className="visually-hidden">{copiedCode ? 'Class code copied' : ''}</span>
+                <span aria-live="polite" role={classCodeFeedback && !copiedCode ? 'alert' : 'status'}>
+                  {classCodeFeedback}
+                </span>
               </>
-            ) : isEnrolled ? (
+            ) : isLearner && isEnrolled ? (
               <span className="pill"><Check size={12} aria-hidden="true" /> Enrolled · {course.term}</span>
-            ) : (
+            ) : isLearner ? (
               <button onClick={() => setIsJoinOpen(true)} className="btn btn-primary btn-sm">
                 <UserPlus size={14} aria-hidden="true" />
                 <span>Join course</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -361,17 +495,37 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             <div className="stat-note">{course.term}</div>
           </div>
           <div className="stat">
-            <div className="stat-label">Average attendance</div>
-            <div className="stat-value">{AVERAGE_ATTENDANCE.toFixed(1)}<span className="stat-unit">%</span></div>
-            <div className="stat-note">Over {CLASSES_HELD} classes held</div>
+            <div className="stat-label">{isLearner ? 'Your attendance' : 'Average attendance'}</div>
+            <div className="stat-value">
+              {averageAttendance === null || averageAttendance === undefined
+                ? '–'
+                : <>{averageAttendance.toFixed(1)}<span className="stat-unit">%</span></>}
+            </div>
+            <div className="stat-note">Over {gradebook?.classes_held ?? 0} classes held</div>
           </div>
           <div className="stat">
-            <div className="stat-label">Below {ATTENDANCE_MINIMUM}% attendance</div>
-            <div className="stat-value" style={{ color: BELOW_MINIMUM.length > 0 ? 'var(--negative)' : undefined }}>
-              {BELOW_MINIMUM.length}
+            <div className="stat-label">{isLearner ? 'Attendance status' : `Below ${ATTENDANCE_MINIMUM}% attendance`}</div>
+            <div className="stat-value" style={{ color: belowMinimum.length > 0 ? 'var(--negative)' : undefined }}>
+              {gradebook
+                ? (isLearner
+                  ? gradebook.classes_held === 0
+                    ? '–'
+                    : belowMinimum.length > 0 ? 'At risk' : 'OK'
+                  : belowMinimum.length)
+                : '–'}
             </div>
             <div className="stat-note">
-              {BELOW_MINIMUM.length > 0 ? BELOW_MINIMUM.map((r) => r.name).join(', ') : 'Everyone is above the minimum'}
+              {!gradebook
+                ? 'Loading attendance data'
+                : gradebook.classes_held === 0
+                  ? 'No attendance recorded yet'
+                  : belowMinimum.length > 0
+                    ? isLearner
+                      ? `Your attendance is below ${ATTENDANCE_MINIMUM}%.`
+                      : belowMinimum.map((student) => student.full_name).join(', ')
+                    : isLearner
+                      ? `Your attendance is at least ${ATTENDANCE_MINIMUM}%.`
+                      : 'Everyone is above the minimum'}
             </div>
           </div>
         </div>
@@ -406,20 +560,25 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           {/* Left Column: Upcoming Deadlines */}
           <aside className="panel" aria-labelledby="upcoming-title">
             <h2 id="upcoming-title" className="panel-title" style={{ marginBottom: '4px' }}>Upcoming</h2>
+            {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
             <ul className="rows">
-              {UPCOMING.map((item) => (
-                <li key={item.title} className="row" style={{ minHeight: '56px' }}>
+              {upcoming.map((item) => (
+                <li key={item.assignment_id} className="row" style={{ minHeight: '56px' }}>
                   <div className="row-main">
                     <span className="row-title">{item.title}</span>
-                    <span className="row-meta">{item.kind} · {item.when}</span>
+                    <span className="row-meta">
+                      Due {item.deadline ? new Date(item.deadline).toLocaleString() : 'No deadline'} · {item.total_marks} marks
+                    </span>
                   </div>
                 </li>
               ))}
+              {upcoming.length === 0 && <li className="row muted">No upcoming coursework.</li>}
             </ul>
           </aside>
 
           {/* Right Column: Announcements Feed */}
           <div className="stack">
+            {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
 
             {/* Announcement Composer */}
             <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
@@ -534,61 +693,30 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           <div className="page-head" style={{ marginBottom: 0 }}>
             <div>
               <h2 className="section-title" style={{ marginBottom: 0 }}>Classwork</h2>
-              <p className="page-sub">Grouped by unit</p>
+              <p className="page-sub">Assignments and quizzes for this course</p>
             </div>
-            {session?.canCreateCourse() && (
-              <button className="btn btn-primary btn-sm" onClick={() => alert('New assignment & quiz form')}>
-                Create assignment or quiz
-              </button>
-            )}
           </div>
-
-          {/* Unit I */}
-          <section className="panel" aria-labelledby="unit-1">
-            <div className="panel-head">
-              <h3 id="unit-1" className="panel-title" style={{ fontSize: '1.25rem' }}>Unit 1 · Architectural analysis & UML modelling</h3>
-              <span className="panel-note">Covered in lecture</span>
-            </div>
+          {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
+          <section className="panel" aria-label="Course assignments and quizzes">
             <ul className="rows">
-              <li className="row">
-                <div className="row-main">
-                  <span className="row-title">Use case diagram & SRS specification</span>
-                  <span className="row-meta">Posted Oct 12 · 100 points · individual or team</span>
-                </div>
-                <div className="row-end">
-                  <span className="row-meta">Due Friday, 11:59 PM</span>
-                  <span className="pill">Assignment</span>
-                </div>
-              </li>
-              <li className="row">
-                <div className="row-main">
-                  <span className="row-title">Lecture plan 3: Use case analysis & boundary design</span>
-                  <span className="row-meta">Drafted with AI studio · approved by the teacher</span>
-                </div>
-                <div className="row-end">
-                  <span className="pill">Lecture plan</span>
-                </div>
-              </li>
-            </ul>
-          </section>
-
-          {/* Unit II */}
-          <section className="panel" aria-labelledby="unit-2">
-            <div className="panel-head">
-              <h3 id="unit-2" className="panel-title" style={{ fontSize: '1.25rem' }}>Unit 2 · AI-assisted workflow & automated quizzing</h3>
-              <span className="panel-note">In progress</span>
-            </div>
-            <ul className="rows">
-              <li className="row">
-                <div className="row-main">
-                  <span className="row-title">Formative quiz 1: Software architecture principles</span>
-                  <span className="row-meta">10 questions · graded automatically · 20 marks</span>
-                </div>
-                <div className="row-end">
-                  <span className="row-meta">Due Sunday</span>
-                  <span className="pill">Quiz</span>
-                </div>
-              </li>
+              {upcoming.map((item) => (
+                <li key={item.assignment_id} className="row">
+                  <div className="row-main">
+                    <span className="row-title">{item.title}</span>
+                    <span className="row-meta">
+                      Due {item.deadline ? new Date(item.deadline).toLocaleString() : 'No deadline'}
+                    </span>
+                  </div>
+                  <div className="row-end">
+                    <span className="row-meta">{item.total_marks} marks</span>
+                  </div>
+                </li>
+              ))}
+              {upcoming.length === 0 && (
+                <li className="row muted">
+                  {dataError ? 'Classwork could not be loaded.' : 'No upcoming classwork.'}
+                </li>
+              )}
             </ul>
           </section>
         </div>
@@ -686,9 +814,15 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             <div>
               <h2 className="section-title" style={{ marginBottom: 0 }}>Grades & attendance</h2>
               <p className="page-sub">
-                {BELOW_MINIMUM.length === 0
-                  ? `Everyone is above the ${ATTENDANCE_MINIMUM}% attendance minimum.`
-                  : `${BELOW_MINIMUM.map((r) => `${r.name} (${pct1(r.attPct)})`).join(', ')} ${BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the ${ATTENDANCE_MINIMUM}% attendance minimum.`}
+                {!gradebook || gradebook.classes_held === 0
+                  ? 'No attendance has been recorded yet.'
+                  : isLearner
+                    ? belowMinimum.length > 0
+                      ? `Your attendance is below the ${ATTENDANCE_MINIMUM}% minimum.`
+                      : `Your attendance is at or above the ${ATTENDANCE_MINIMUM}% minimum.`
+                  : belowMinimum.length === 0
+                    ? `Everyone is above the ${ATTENDANCE_MINIMUM}% attendance minimum.`
+                    : `${belowMinimum.map((student) => `${student.full_name} (${pct1(student.attendance_percent)})`).join(', ')} ${belowMinimum.length === 1 ? 'is' : 'are'} below the ${ATTENDANCE_MINIMUM}% attendance minimum.`}
               </p>
             </div>
             <div className="page-actions">
@@ -696,22 +830,34 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                 {showAIInsights ? 'Hide AI summary' : 'AI summary'}
               </button>
               {session?.canEditGrades() && (
-                <button className="btn btn-primary btn-sm" onClick={() => alert('Attendance & marks successfully saved to database transactions!')}>
-                  Save changes
-                </button>
+                <>
+                  <input
+                    className="input"
+                    type="date"
+                    value={attendanceDate}
+                    onChange={(event) => setAttendanceDate(event.target.value)}
+                    aria-label="Attendance session date"
+                  />
+                  <button className="btn btn-primary btn-sm" onClick={() => void handleSaveGradebook()} disabled={isSavingGradebook || !gradebook}>
+                    {isSavingGradebook ? 'Saving…' : 'Save changes'}
+                  </button>
+                </>
               )}
             </div>
           </div>
+          {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
+          {gradebookFeedback && <p className="notice" role="status">{gradebookFeedback}</p>}
 
           {/* AI summary, built from the same rows as the table */}
           {showAIInsights && (
             <section className="panel" aria-labelledby="ai-summary-title">
               <h3 id="ai-summary-title" className="panel-title" style={{ fontSize: '1.2rem', marginBottom: '6px' }}>AI summary</h3>
               <p style={{ maxWidth: '72ch' }}>
-                The class averages <span className="num">{AVERAGE_TOTAL.toFixed(1)}</span> of 100 so far, and attendance averages{' '}
-                <span className="num">{pct1(AVERAGE_ATTENDANCE)}</span> over {CLASSES_HELD} classes.
-                {BELOW_MINIMUM.length > 0 && (
-                  <> {BELOW_MINIMUM.map((r) => `${r.name} (roll ${r.roll})`).join(', ')} {BELOW_MINIMUM.length === 1 ? 'is' : 'are'} below the {ATTENDANCE_MINIMUM}% minimum; a counselling reminder is waiting for your approval.</>
+                {isLearner ? 'Your marks average ' : 'The class averages '}
+                <span className="num">{averageTotal?.toFixed(1) ?? '–'}</span> of 100 so far, and {isLearner ? 'your attendance is ' : 'attendance averages '}
+                <span className="num">{averageAttendance === null || averageAttendance === undefined ? '–' : pct1(averageAttendance)}</span> over {gradebook?.classes_held ?? 0} classes.
+                {belowMinimum.length > 0 && (
+                  <> {isLearner ? 'Your attendance is' : belowMinimum.map((student) => student.full_name).join(', ')} {isLearner ? '' : belowMinimum.length === 1 ? 'is' : 'are'} below the {ATTENDANCE_MINIMUM}% minimum.</>
                 )}
               </p>
             </section>
@@ -733,41 +879,86 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                   </tr>
                 </thead>
                 <tbody>
-                  {GRADEBOOK.map((row) => {
-                    const isShort = row.attPct < ATTENDANCE_MINIMUM;
+                  {(gradebook?.students || []).map((student) => {
+                    const attendancePercent = student.attendance_percent;
+                    const isShort = attendancePercent !== null && attendancePercent < ATTENDANCE_MINIMUM;
+                    const assignmentMark = getStudentMark(student.marks, 'Assignment');
+                    const quizMark = getStudentMark(student.marks, 'Quiz');
+                    const midtermMark = getStudentMark(student.marks, 'Midterm');
+                    const total = Number(assignmentMark?.marks_obtained || 0)
+                      + Number(quizMark?.marks_obtained || 0)
+                      + Number(midtermMark?.marks_obtained || 0);
                     return (
-                      <tr key={row.roll}>
-                        <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{row.roll}</td>
+                      <tr key={student.student_id}>
+                        <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{student.student_id}</td>
                         <td>
-                          <span style={{ fontWeight: 500 }}>{row.name}</span>
-                          <span className="cell-sub">{row.role}</span>
+                          <span style={{ fontWeight: 500 }}>{student.full_name}</span>
+                          <span className="cell-sub">{student.username}</span>
                         </td>
                         <td className="num">
-                          <div className="attend" title={`${row.attended} of ${CLASSES_HELD} classes`}>
+                          <div className="attend" title={`${student.attended} of ${gradebook?.classes_held ?? 0} classes`}>
                             <span className="attend-track" aria-hidden="true">
-                              <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${row.attPct}%` }} />
+                              <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${attendancePercent ?? 0}%` }} />
                               <span className="attend-min" style={{ left: `${ATTENDANCE_MINIMUM}%` }} />
                             </span>
                             <span className="attend-value" style={{ color: isShort ? 'var(--negative)' : undefined }}>
-                              {pct1(row.attPct)}
+                              {attendancePercent === null ? '–' : pct1(attendancePercent)}
                             </span>
                           </div>
-                          <span className="cell-sub">{row.attended} of {CLASSES_HELD}</span>
+                          {session?.canEditGrades() ? (
+                            <select
+                              className="select"
+                              value={attendanceStatuses[student.student_id] || 'ABSENT'}
+                              onChange={(event) => setAttendanceStatuses((current) => ({
+                                ...current,
+                                [student.student_id]: event.target.value as 'PRESENT' | 'ABSENT',
+                              }))}
+                              aria-label={`Attendance status for ${student.full_name}`}
+                            >
+                              <option value="PRESENT">Present</option>
+                              <option value="ABSENT">Absent</option>
+                            </select>
+                          ) : (
+                            <span className="cell-sub">{student.attended} of {gradebook?.classes_held ?? 0}</span>
+                          )}
                         </td>
-                        <td className="num">{row.assign}</td>
-                        <td className="num">{row.quiz}</td>
-                        <td className="num">{row.mid}</td>
-                        <td className="num" style={{ fontWeight: 600 }}>{row.total}</td>
+                        {[
+                          { name: 'Assignment', total: 30, mark: assignmentMark },
+                          { name: 'Quiz', total: 20, mark: quizMark },
+                          { name: 'Midterm', total: 50, mark: midtermMark },
+                        ].map(({ name, total: maximum, mark }) => (
+                          <td className="num" key={name}>
+                            {session?.canEditGrades() ? (
+                              <input
+                                className="input"
+                                type="number"
+                                min="0"
+                                max={maximum}
+                                step="0.01"
+                                value={getMarkValue(student.student_id, name, mark)}
+                                onChange={(event) => setMarkDrafts((current) => ({
+                                  ...current,
+                                  [`${student.student_id}:${name}`]: event.target.value,
+                                }))}
+                                aria-label={`${name} marks for ${student.full_name}`}
+                              />
+                            ) : mark ? `${mark.marks_obtained}/${mark.total_marks}` : '–'}
+                          </td>
+                        ))}
+                        <td className="num" style={{ fontWeight: 600 }}>{total}</td>
                         <td>
                           {isShort ? (
                             <span className="pill pill-negative">Attendance risk</span>
                           ) : (
-                            <span className="muted">{row.total >= 90 ? 'Exemplary' : 'On track'}</span>
+                            <span className="muted">{total >= 90 ? 'Exemplary' : 'On track'}</span>
                           )}
                         </td>
                       </tr>
                     );
                   })}
+                  {gradebook?.students.length === 0 && (
+                    <tr><td colSpan={8} className="muted">No students are enrolled in this course.</td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -831,7 +1022,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                             {isCR && <span className="pill">CR</span>}
                             {isCurrentUser && <span className="pill">You</span>}
                           </span>
-                          <span className="row-meta">Roll {stud.roll || '–'} · {stud.email}</span>
+                          <span className="row-meta">{stud.roll || '–'} · {stud.email}</span>
                         </div>
                       </div>
 
@@ -1051,17 +1242,6 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
         </div>
       )}
       </div>
-
-      {/* Clone Course Modal (Prototype Pattern) */}
-      <CloneCourseModal
-        sourceCourse={course}
-        isOpen={isCloneOpen}
-        onClose={() => setIsCloneOpen(false)}
-        onCloned={(cloned) => {
-          onCourseUpdated(cloned);
-          alert(`Course duplicated via Prototype pattern! Join code: ${cloned.cohortCode}`);
-        }}
-      />
 
       {/* Join Course Modal (for student accounts) */}
       <JoinCourseModal

@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Copy, UserPlus } from 'lucide-react';
+import { Plus, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { CourseDetailView } from '../classroom/CourseDetailView';
 import { CreateCourseModal } from '../classroom/CreateCourseModal';
-import { CloneCourseModal } from '../classroom/CloneCourseModal';
 import { JoinCourseModal } from '../classroom/JoinCourseModal';
 import { getCourseTheme } from '../../utils/courseTheme';
 
@@ -48,10 +47,25 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
   const facade = ClassroomAcademicFacade.getInstance();
 
   const [courses, setCourses] = useState<CourseBlueprint[]>(facade.getCourses());
+  const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinPrefillCode, setJoinPrefillCode] = useState('');
-  const [courseToClone, setCourseToClone] = useState<CourseBlueprint | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    facade.syncWithBackend()
+      .then(() => {
+        if (active) {
+          setCourses(facade.getCourses());
+          setCourseLoadError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setCourseLoadError(error instanceof Error ? error.message : 'Unable to load courses');
+      });
+    return () => { active = false; };
+  }, [facade, session?.id, session?.role]);
 
   const handleCreateCourseClick = () => {
     // Pattern 3: Proxy Check
@@ -74,15 +88,14 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
     setIsJoinOpen(true);
   };
 
-  const isStudent = session?.role === 'student';
-  const enrolledCourses = session ? facade.getEnrolledCoursesForStudent(session.email) : [];
-  // For students, ONLY enrolled courses can be seen or accessed
-  const displayedCourses = isStudent ? enrolledCourses : courses;
+  const isStudent = session?.role === 'student' || session?.role === 'cr';
+  // The backend course list is already scoped to courses this user can access.
+  const displayedCourses = courses;
 
   // If a course is selected, render the Course Detail Workspace
   const selectedCourse = selectedCode ? facade.getCourseByCode(selectedCode) ?? null : null;
   // For students, ONLY enrolled courses can be opened
-  const isBlocked = !!selectedCourse && isStudent && !facade.isStudentEnrolled(selectedCourse.code, session?.email);
+  const isBlocked = !!selectedCourse && !displayedCourses.some((item) => item.courseId === selectedCourse.courseId);
   useEffect(() => {
     if (isBlocked || (selectedCode && !selectedCourse)) onSelectCode(null);
   }, [isBlocked, selectedCode, selectedCourse, onSelectCode]);
@@ -137,14 +150,14 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
 
       {displayedCourses.length === 0 ? (
         <div className="panel" style={{ maxWidth: '560px' }}>
-          <h2 className="panel-title">You haven't joined a course yet</h2>
+          <h2 className="panel-title">{courseLoadError ? 'Courses could not be loaded' : "You haven't joined a course yet"}</h2>
           <p className="muted" style={{ margin: '6px 0 16px' }}>
-            Ask your teacher or CR for the class code, then join with it here.
+            {courseLoadError || 'Ask your teacher or CR for the class code, then join with it here.'}
           </p>
-          <button className="btn btn-primary" onClick={handleJoinCourseClick}>
+          {isStudent && <button className="btn btn-primary" onClick={handleJoinCourseClick}>
             <UserPlus size={16} aria-hidden="true" />
             <span>Join with a class code</span>
-          </button>
+          </button>}
         </div>
       ) : (
         <ul className="course-grid" style={{ listStyle: 'none' }}>
@@ -154,7 +167,9 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
             const pct = topics.length > 0 ? Math.round((coveredTopics / topics.length) * 100) : null;
 
             const theme = getCourseTheme(course);
-            const isEnrolled = session ? facade.isStudentEnrolled(course.code, session.email) : false;
+            const isEnrolled = isStudent
+              ? true
+              : session ? facade.isStudentEnrolled(course.code, session.email) : false;
 
             // Title without its code prefix; section and room without the credits
             const cleanTitle = course.title.replace(/^[A-Z]{2,4}-\d{3,4}:\s*/, '');
@@ -205,21 +220,6 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
                   </span>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {session?.canCreateCourse() && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCourseToClone(course);
-                        }}
-                        aria-label={`Duplicate ${cleanTitle}`}
-                      >
-                        <Copy size={14} aria-hidden="true" />
-                        <span>Duplicate</span>
-                      </button>
-                    )}
-
                     {isStudent && !isEnrolled && (
                       <button
                         type="button"
@@ -251,19 +251,6 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
           onSelectCode(newCourse.code);
         }}
       />
-
-      {/* Clone Course Modal (Prototype Pattern) */}
-      {courseToClone && (
-        <CloneCourseModal
-          sourceCourse={courseToClone}
-          isOpen={!!courseToClone}
-          onClose={() => setCourseToClone(null)}
-          onCloned={(cloned) => {
-            setCourses(facade.getCourses());
-            onSelectCode(cloned.code);
-          }}
-        />
-      )}
 
       {/* Join Course Modal for Students */}
       <JoinCourseModal

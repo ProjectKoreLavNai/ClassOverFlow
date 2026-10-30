@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ShieldCheck, UserX } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
+import api, { type BackendUser } from '../../services/api';
+import type { AcademicUser } from '../../types/auth';
 import type { AcademicRole } from '../../types/auth';
 import { getPersonTint } from '../../utils/courseTheme';
 
@@ -12,31 +13,71 @@ const ROLE_LABELS: Record<AcademicRole, string> = {
 };
 
 export const AdminUserManagement: React.FC = () => {
-  const { users, verifyUser, updateUserRole, deleteUser } = useAuth();
+  const [users, setUsers] = useState<AcademicUser[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const mapUser = (user: BackendUser): AcademicUser => ({
+    id: String(user.user_id),
+    email: user.email,
+    fullName: user.full_name || user.username,
+    role: user.role as AcademicRole,
+    department: '',
+    avatar: (user.full_name || user.username).split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
+    isVerified: Boolean(user.is_verified),
+    isInstitutional: true,
+    phone: user.phone || undefined,
+  });
+
+  const refreshUsers = async () => {
+    try {
+      const result = await api.listAllAdminUsers();
+      setUsers(result.map(mapUser));
+      setLoadError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load users';
+      setLoadError(message);
+      setToastMessage(message);
+    }
+  };
+
+  useEffect(() => {
+    void refreshUsers();
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleRoleChange = (email: string, newRole: AcademicRole) => {
-    updateUserRole(email, newRole);
-    showToast(`${email} is now ${ROLE_LABELS[newRole].toLowerCase()}.`);
+  const handleRoleChange = async (user: AcademicUser, newRole: AcademicRole) => {
+    try {
+      const updated = await api.updateAdminUser(Number(user.id), { role: newRole });
+      setUsers((current) => current.map((entry) => entry.id === user.id ? mapUser(updated) : entry));
+      showToast(`${user.email} is now ${ROLE_LABELS[newRole].toLowerCase()}.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to update user role');
+    }
   };
 
-  const handleVerify = (email: string) => {
-    verifyUser(email);
-    showToast(`${email} verified.`);
+  const handleVerify = async (user: AcademicUser) => {
+    try {
+      const updated = await api.updateAdminUser(Number(user.id), { is_verified: true });
+      setUsers((current) => current.map((entry) => entry.id === user.id ? mapUser(updated) : entry));
+      showToast(`${user.email} verified.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to verify user');
+    }
   };
 
-  const handleDelete = (email: string, name: string) => {
-    if (window.confirm(`Are you sure you want to permanently delete account for ${name} (${email})?`)) {
-      const ok = deleteUser(email);
-      if (ok) {
-        showToast(`Account for ${name} deleted.`);
-      } else {
-        alert('Cannot delete the active administrator account.');
+  const handleDelete = async (user: AcademicUser) => {
+    if (window.confirm(`Are you sure you want to permanently delete account for ${user.fullName} (${user.email})?`)) {
+      try {
+        await api.deleteAdminUser(Number(user.id));
+        setUsers((current) => current.filter((entry) => entry.id !== user.id));
+        showToast(`Account for ${user.fullName} deleted.`);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Unable to delete account');
       }
     }
   };
@@ -48,7 +89,7 @@ export const AdminUserManagement: React.FC = () => {
       <div className="panel-head" style={{ marginBottom: '4px' }}>
         <h2 id="accounts-title" className="panel-title" style={{ fontSize: '1.4rem' }}>Accounts</h2>
         <span className="panel-note num" aria-live="polite">
-          {toastMessage ?? `${users.length} accounts · ${pending === 0 ? 'all verified' : `${pending} waiting for verification`}`}
+          {toastMessage ?? loadError ?? `${users.length} accounts · ${pending === 0 ? 'all verified' : `${pending} waiting for verification`}`}
         </span>
       </div>
 
@@ -94,7 +135,7 @@ export const AdminUserManagement: React.FC = () => {
                   <select
                     className="select"
                     value={user.role}
-                    onChange={(e) => handleRoleChange(user.email, e.target.value as AcademicRole)}
+                    onChange={(e) => void handleRoleChange(user, e.target.value as AcademicRole)}
                     aria-label={`Role for ${user.fullName}`}
                     style={{ minHeight: '32px', height: '32px', padding: '0 8px', width: 'auto' }}
                   >
@@ -108,7 +149,7 @@ export const AdminUserManagement: React.FC = () => {
                 <td style={{ textAlign: 'right' }}>
                   <div style={{ display: 'inline-flex', gap: '4px' }}>
                     {!user.isVerified && (
-                      <button className="btn btn-primary btn-sm" onClick={() => handleVerify(user.email)}>
+                      <button className="btn btn-primary btn-sm" onClick={() => void handleVerify(user)}>
                         <ShieldCheck size={14} aria-hidden="true" />
                         <span>Verify</span>
                       </button>
@@ -117,7 +158,7 @@ export const AdminUserManagement: React.FC = () => {
                     <button
                       className="btn btn-ghost btn-sm btn-icon"
                       style={{ color: 'var(--negative)' }}
-                      onClick={() => handleDelete(user.email, user.fullName)}
+                      onClick={() => void handleDelete(user)}
                       aria-label={`Delete account for ${user.fullName}`}
                       title="Delete account"
                     >

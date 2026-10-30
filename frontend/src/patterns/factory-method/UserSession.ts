@@ -7,6 +7,7 @@ import type { AcademicRole, AcademicUser, IUserSession } from '../../types/auth'
 export abstract class UserSession implements IUserSession {
   public readonly id: string;
   public readonly name: string;
+  public readonly username?: string;
   public readonly email: string;
   public readonly role: AcademicRole;
   public readonly department: string;
@@ -20,6 +21,7 @@ export abstract class UserSession implements IUserSession {
   constructor(data: AcademicUser) {
     this.id = data.id || 'usr_' + Date.now();
     this.name = data.fullName;
+    this.username = data.username;
     this.email = data.email;
     this.role = data.role;
     this.department = data.department || 'Computer Science & Engineering';
@@ -28,7 +30,7 @@ export abstract class UserSession implements IUserSession {
     this.avatar = data.avatar || this.generateInitials(data.fullName);
     this.isVerified = data.isVerified;
     this.isInstitutional = data.isInstitutional;
-    this.token = 'jwt_co_' + Math.random().toString(36).substring(2, 10);
+    this.token = data.token || 'jwt_co_' + Math.random().toString(36).substring(2, 10);
   }
 
   private generateInitials(name: string): string {

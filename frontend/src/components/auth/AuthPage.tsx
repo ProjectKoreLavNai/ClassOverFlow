@@ -29,7 +29,6 @@ export const AuthPage: React.FC = () => {
   const [regEmail, setRegEmail] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regRole, setRegRole] = useState<AcademicRole>('student');
-  const [regRoll, setRegRoll] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
@@ -76,7 +75,6 @@ export const AuthPage: React.FC = () => {
         email: regEmail,
         phone: regPhone,
         role: regRole,
-        roll: regRoll,
         password: regPassword
       });
 
@@ -278,10 +276,6 @@ export const AuthPage: React.FC = () => {
                     <option value="teacher">Teacher</option>
                     <option value="admin">Admin</option>
                   </select>
-                </label>
-                <label className="field">
-                  <span className="field-label">Roll or ID</span>
-                  <input className="input" type="text" name="roll" inputMode="numeric" autoComplete="off" value={regRoll} onChange={(e) => setRegRoll(e.target.value)} placeholder="e.g. 14…" />
                 </label>
               </div>
 

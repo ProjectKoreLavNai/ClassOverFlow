@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BookOpen, CheckSquare, Megaphone, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { getCourseTheme } from '../../utils/courseTheme';
+import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 
 interface Props {
   activeTab: string;
@@ -15,6 +16,24 @@ interface Props {
 
 export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activeCourseCode, onSelectCourse }) => {
   const { session, setViolation } = useAuth();
+  const isLearner = session?.role === 'student' || session?.role === 'cr';
+  const [courses, setCourses] = useState<CourseBlueprint[]>([]);
+  const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    ClassroomAcademicFacade.getInstance().syncWithBackend()
+      .then(() => {
+        if (active) {
+          setCourses(ClassroomAcademicFacade.getInstance().getCourses());
+          setCourseLoadError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (active) setCourseLoadError(error instanceof Error ? error.message : 'Unable to load courses');
+      });
+    return () => { active = false; };
+  }, [session?.id, session?.role]);
 
   const handleTabClick = (tabId: string) => {
     // Pattern 3: Proxy Pattern (Security Bouncer RBAC Check)
@@ -29,7 +48,7 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
   const allNavItems = [
     {
       id: 'classrooms',
-      label: session?.role === 'student' ? 'My classrooms' : 'All classrooms',
+      label: isLearner ? 'My classrooms' : 'All classrooms',
       icon: BookOpen,
       allowed: session ? session.role !== 'admin' : true
     },
@@ -57,13 +76,8 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
   const visibleNavItems = allNavItems.filter((item) => item.allowed);
 
   // Like Google Classroom: the classes you teach or are enrolled in, one click away
-  const facade = ClassroomAcademicFacade.getInstance();
   const showCourses = !!session && session.role !== 'admin';
-  const courses = !session || !showCourses
-    ? []
-    : session.role === 'student'
-      ? facade.getEnrolledCoursesForStudent(session.email)
-      : facade.getCourses();
+  const visibleCourses = !session || !showCourses ? [] : courses;
 
   return (
     <aside className={`app-side${isOpen ? ' is-open' : ''}`} id="app-nav">
@@ -88,9 +102,9 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
       </nav>
 
       {showCourses && courses.length > 0 && (
-        <nav aria-label={session?.role === 'student' ? 'Enrolled courses' : 'Courses'} className="nav-courses">
-          <div className="nav-group-label">{session?.role === 'teacher' ? 'Teaching' : session?.role === 'student' ? 'Enrolled' : 'Courses'}</div>
-          {courses.map((course) => {
+        <nav aria-label={isLearner ? 'Enrolled courses' : 'Courses'} className="nav-courses">
+          <div className="nav-group-label">{session?.role === 'teacher' ? 'Teaching' : isLearner ? 'Enrolled' : 'Courses'}</div>
+          {visibleCourses.map((course) => {
             const theme = getCourseTheme(course);
             const title = course.title.replace(/^[A-Z]{2,4}-\d{3,4}:\s*/, '');
             return (
@@ -113,6 +127,7 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
           })}
         </nav>
       )}
+      {showCourses && courseLoadError && <p className="nav-group-label" role="alert">{courseLoadError}</p>}
 
       <div className="nav-foot">
         Semester 3-1

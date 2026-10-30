@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _COURSE_FIELDS = """
     c.course_id, c.teacher_id, c.course_name, c.course_code,
-    c.description, c.syllabus, t.email AS teacher_email
+    c.description, c.syllabus, t.email AS teacher_email, t.full_name AS teacher_name,
+    (SELECT COUNT(*) FROM public.enrollments e WHERE e.course_id = c.course_id) AS students_count
 """
 _COURSE_FROM = """
     FROM public.courses c
@@ -64,7 +65,7 @@ class CourseRepository:
         elif user["role"] == "teacher":
             access_filter = "WHERE c.teacher_id = :user_id"
             params = {"user_id": user["user_id"]}
-        elif user["role"] == "student":
+        elif user["role"] in ("student", "cr"):
             access_filter = (
                 "WHERE EXISTS (SELECT 1 FROM public.enrollments e "
                 "WHERE e.course_id = c.course_id AND e.student_id = :user_id)"
@@ -92,6 +93,15 @@ class CourseRepository:
             {"class_code": class_code},
         )
         return result.scalar_one()
+
+    async def update_class_code_hash(self, course_id: int, class_code_hash: str) -> None:
+        await self.session.execute(
+            text(
+                "UPDATE public.courses SET class_code_hash = :class_code_hash "
+                "WHERE course_id = :course_id"
+            ),
+            {"course_id": course_id, "class_code_hash": class_code_hash},
+        )
 
     async def teacher_exists(self, teacher_id: int) -> bool:
         result = await self.session.execute(
@@ -148,6 +158,18 @@ class CourseRepository:
                 "FROM public.enrollments e "
                 "JOIN public.students s ON s.student_id = e.student_id "
                 "WHERE e.course_id = :course_id ORDER BY e.enrolled_at"
+            ),
+            {"course_id": course_id},
+        )
+        return [dict(row) for row in result.mappings().all()]
+
+    async def list_upcoming(self, course_id: int) -> list[dict]:
+        result = await self.session.execute(
+            text(
+                "SELECT assignment_id, title, deadline, total_marks "
+                "FROM public.assignments WHERE course_id = :course_id "
+                "AND deadline IS NOT NULL AND deadline >= NOW() "
+                "ORDER BY deadline, assignment_id LIMIT 10"
             ),
             {"course_id": course_id},
         )

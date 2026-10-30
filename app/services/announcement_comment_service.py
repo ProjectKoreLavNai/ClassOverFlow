@@ -119,7 +119,7 @@ class AnnouncementCommentService:
                     or course.get("teacher_email") == user["email"]
                 )
             )
-            or (user["role"] == "student" and is_enrolled)
+            or (user["role"] in ("student", "cr") and is_enrolled)
         )
 
     @staticmethod

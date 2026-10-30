@@ -9,7 +9,10 @@ import {
 import { UserSessionFactory } from '../factory-method';
 import api from '../../services/api';
 
-export type AuthListener = (event: 'login' | 'logout' | 'register' | 'admin_update', session: IUserSession | null) => void;
+export type AuthListener = (
+  event: 'login' | 'logout' | 'register' | 'admin_update' | 'profile_update',
+  session: IUserSession | null
+) => void;
 
 /**
  * Singleton Pattern: AuthSessionManager
@@ -166,7 +169,7 @@ export class AuthSessionManager {
     };
   }
 
-  private notify(event: 'login' | 'logout' | 'register' | 'admin_update'): void {
+  private notify(event: 'login' | 'logout' | 'register' | 'admin_update' | 'profile_update'): void {
     this.listeners.forEach(cb => {
       try {
         cb(event, this.currentSession);
@@ -208,6 +211,7 @@ export class AuthSessionManager {
             email: cleanEmail,
             password: effectivePassword,
             fullName: authData.user.full_name || authData.user.username || cleanEmail.split('@')[0],
+            username: authData.user.username,
             role: (authData.user.role as AcademicRole) || 'student',
             department: 'Computer Science & Engineering',
             avatar: this.generateInitials(authData.user.full_name || authData.user.username || cleanEmail),
@@ -221,6 +225,9 @@ export class AuthSessionManager {
         // Factory Method generates session
         const sessionUser = {
           ...user,
+          fullName: authData.user.full_name || user.fullName,
+          username: authData.user.username || user.username,
+          phone: authData.user.phone ?? user.phone,
           role: (authData.user.role as AcademicRole) || user.role,
         };
         this.currentSession = UserSessionFactory.createSession(sessionUser);
@@ -284,7 +291,6 @@ export class AuthSessionManager {
     password?: string;
     phone?: string;
     role: AcademicRole;
-    roll?: string;
   }): Promise<FilterResult & { session?: IUserSession }> {
     const cleanEmail = (data.email || '').trim().toLowerCase();
     const effectivePassword = data.password || 'Password@123';
@@ -324,11 +330,11 @@ export class AuthSessionManager {
       const newUser: AcademicUser = {
         id: `usr_${authData.user.user_id || Date.now()}`,
         fullName: data.fullName,
+        username: data.username,
         email: cleanEmail,
         password: effectivePassword,
         phone: data.phone,
         role: data.role,
-        roll: data.roll,
         department: 'Computer Science & Engineering',
         avatar: this.generateInitials(data.fullName),
         isVerified: Boolean(request.isInstitutional),
@@ -366,11 +372,11 @@ export class AuthSessionManager {
     const newUser: AcademicUser = {
       id: 'usr_' + Date.now(),
       fullName: data.fullName,
+      username: data.username,
       email: cleanEmail,
       password: effectivePassword,
       phone: data.phone,
       role: data.role,
-      roll: data.roll,
       department: 'Computer Science & Engineering',
       avatar: this.generateInitials(data.fullName),
       isVerified: Boolean(request.isInstitutional),
@@ -402,6 +408,50 @@ export class AuthSessionManager {
     this.currentSession = null;
     localStorage.removeItem('classoverflow_active_session_v5');
     this.notify('logout');
+  }
+
+  public async updateProfile(values: {
+    fullName: string;
+    username: string;
+    phone?: string;
+  }): Promise<IUserSession> {
+    if (!this.currentSession) {
+      throw new Error('You must be signed in to update your profile');
+    }
+
+    const currentSession = this.currentSession;
+    const profile = await api.updateProfile({
+      full_name: values.fullName.trim(),
+      username: values.username.trim(),
+      ...(currentSession.role !== 'admin' ? { phone: values.phone?.trim() || null } : {}),
+    });
+    const existingIndex = this.users.findIndex(
+      (user) => user.email.toLowerCase() === currentSession.email.toLowerCase()
+    );
+    const existingUser = existingIndex >= 0 ? this.users[existingIndex] : undefined;
+    const updatedUser: AcademicUser = {
+      ...existingUser,
+      id: currentSession.id,
+      email: currentSession.email,
+      fullName: profile.full_name || values.fullName.trim(),
+      username: profile.username || values.username.trim(),
+      role: currentSession.role,
+      department: currentSession.department,
+      roll: currentSession.roll,
+      phone: profile.phone ?? undefined,
+      avatar: this.generateInitials(profile.full_name || values.fullName.trim()),
+      isVerified: currentSession.isVerified,
+      isInstitutional: currentSession.isInstitutional,
+      token: currentSession.token,
+    };
+
+    if (existingIndex >= 0) this.users[existingIndex] = { ...updatedUser, password: existingUser?.password };
+    else this.users.push(updatedUser);
+    this.saveUsersToStorage(this.users);
+    this.currentSession = UserSessionFactory.createSession(updatedUser);
+    localStorage.setItem('classoverflow_active_session_v5', JSON.stringify(updatedUser));
+    this.notify('profile_update');
+    return this.currentSession;
   }
 
   public getUsersByRole(role: AcademicRole): AcademicUser[] {

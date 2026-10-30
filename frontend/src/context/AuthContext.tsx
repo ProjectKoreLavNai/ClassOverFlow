@@ -18,8 +18,8 @@ interface AuthContextValue {
     password?: string;
     phone?: string;
     role: AcademicRole;
-    roll?: string;
   }) => Promise<FilterResult & { session?: IUserSession }>;
+  updateProfile: (data: { fullName: string; username: string; phone?: string }) => Promise<IUserSession>;
   logout: () => Promise<void>;
   switchPersona: (roleOrEmail: AcademicRole | string) => Promise<void>;
   loginAsUser: (email: string) => Promise<FilterResult & { session?: IUserSession }>;
@@ -74,15 +74,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (data: {
     fullName: string;
+    username?: string;
     email: string;
     password?: string;
     phone?: string;
     role: AcademicRole;
-    roll?: string;
   }) => {
     const res = await authManager.register(data);
     if (res.session) setSession(res.session);
     return res;
+  };
+
+  const updateProfile = async (data: { fullName: string; username: string; phone?: string }) => {
+    return authManager.updateProfile(data);
   };
 
   const logout = async () => {
@@ -128,6 +132,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isBackendConnected,
         login,
         register,
+        updateProfile,
         logout,
         switchPersona,
         loginAsUser,

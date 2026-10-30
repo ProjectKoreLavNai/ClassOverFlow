@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { useAuth } from '../../context/AuthContext';
+import api from '../../services/api';
 
 interface Props {
   isOpen: boolean;
@@ -16,21 +17,33 @@ export const CreateCourseModal: React.FC<Props> = ({ isOpen, onClose, onCreated 
   const [title, setTitle] = useState('');
   const [term, setTerm] = useState('Fall 2026');
   const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session) return;
-
-    const facade = ClassroomAcademicFacade.getInstance();
-    const result = facade.createCourse(code, title, term, session);
-
-    if (result.success && result.course) {
-      onCreated(result.course);
+    setIsCreating(true);
+    setError(null);
+    try {
+      const created = await api.createCourse({
+        course_name: title.trim(),
+        course_code: code.trim().toUpperCase(),
+        description: term.trim(),
+        syllabus: '',
+      });
+      const facade = ClassroomAcademicFacade.getInstance();
+      await facade.syncWithBackend();
+      const course = facade.getCourseByCode(created.course_code);
+      if (!course) throw new Error('Course was created but could not be loaded');
+      course.cohortCode = created.class_code || '';
+      onCreated(course);
       onClose();
-    } else {
-      setError(result.message);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to create course');
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -105,8 +118,8 @@ export const CreateCourseModal: React.FC<Props> = ({ isOpen, onClose, onCreated 
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
-              Create course
+            <button type="submit" className="btn btn-primary" disabled={isCreating}>
+              {isCreating ? 'Creating…' : 'Create course'}
             </button>
           </div>
         </form>

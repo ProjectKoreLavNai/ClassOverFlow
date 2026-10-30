@@ -17,6 +17,7 @@ export interface BackendUser {
   username: string;
   full_name?: string;
   phone?: string | null;
+  is_verified?: boolean;
 }
 
 export interface AuthTokenResponse {
@@ -35,8 +36,58 @@ export interface BackendCourse {
   syllabus: string;
   class_code?: string;
   teacher_email?: string;
+  teacher_name?: string;
   teacher_id?: number;
   created_at?: string;
+  students_count?: number;
+}
+
+export interface BackendMark {
+  mark_id: number;
+  student_id: number;
+  assessment_name: string;
+  marks_obtained: number;
+  total_marks: number;
+  recorded_at: string;
+}
+
+export interface BackendGradebook {
+  course_id: number;
+  classes_held: number;
+  average_attendance: number | null;
+  below_minimum: Array<{
+    student_id: number;
+    full_name: string;
+    attendance_percent: number;
+  }>;
+  students: Array<{
+    student_id: number;
+    full_name: string;
+    username: string;
+    attended: number;
+    attendance_percent: number | null;
+    marks: BackendMark[];
+  }>;
+  sessions: Array<{
+    session_id: number;
+    session_date: string;
+    records: Array<{ student_id: number; status: 'PRESENT' | 'ABSENT' }>;
+  }>;
+}
+
+export interface BackendAssignment {
+  assignment_id: number;
+  title: string;
+  deadline: string | null;
+  total_marks: number;
+}
+
+export interface BackendCourseMember {
+  student_id: number;
+  full_name: string;
+  username: string;
+  email: string;
+  enrolled_at: string | null;
 }
 
 export interface BackendAnnouncement {
@@ -220,13 +271,39 @@ class ApiClient {
     return res.data;
   }
 
-  public async listUsers(role?: string, search?: string): Promise<BackendUser[]> {
+  public async listUsers(role?: string, search?: string, offset = 0): Promise<BackendUser[]> {
     const params = new URLSearchParams();
     if (role) params.set('role', role);
     if (search) params.set('search', search);
+    params.set('limit', '100');
+    params.set('offset', String(offset));
     const query = params.toString() ? `?${params.toString()}` : '';
     const res = await this.request<{ data: BackendUser[] }>(`/api/v1/users${query}`);
     return res.data;
+  }
+
+  public async listAllAdminUsers(): Promise<BackendUser[]> {
+    const users: BackendUser[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const page = await this.listUsers(undefined, undefined, offset);
+      users.push(...page);
+      if (page.length < 100) return users;
+    }
+  }
+
+  public async updateAdminUser(
+    userId: number,
+    payload: { role?: string; is_verified?: boolean }
+  ): Promise<BackendUser> {
+    const res = await this.request<{ data: BackendUser }>(`/api/v1/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async deleteAdminUser(userId: number): Promise<void> {
+    await this.request(`/api/v1/users/${userId}`, { method: 'DELETE' });
   }
 
   // --- Courses ---
@@ -237,6 +314,14 @@ class ApiClient {
 
   public async getCourse(courseId: number): Promise<BackendCourse> {
     const res = await this.request<{ data: BackendCourse }>(`/api/v1/courses/${courseId}`);
+    return res.data;
+  }
+
+  public async generateCourseClassCode(courseId: number): Promise<{ class_code: string }> {
+    const res = await this.request<{ data: { class_code: string } }>(
+      `/api/v1/courses/${courseId}/class-code`,
+      { method: 'POST' }
+    );
     return res.data;
   }
 
@@ -268,6 +353,13 @@ class ApiClient {
     });
   }
 
+  public async listCourseUpcoming(courseId: number): Promise<BackendAssignment[]> {
+    const res = await this.request<{ data: BackendAssignment[] }>(
+      `/api/v1/courses/${courseId}/upcoming`
+    );
+    return res.data;
+  }
+
   public async joinCourse(classCode: string): Promise<{ course_id: number; role: string }> {
     const res = await this.request<{ data: { course_id: number; role: string } }>('/api/v1/courses/join', {
       method: 'POST',
@@ -276,8 +368,82 @@ class ApiClient {
     return res.data;
   }
 
-  public async listCourseMembers(courseId: number): Promise<any[]> {
-    const res = await this.request<{ data: any[] }>(`/api/v1/courses/${courseId}/members`);
+  public async listCourseMembers(courseId: number): Promise<BackendCourseMember[]> {
+    const res = await this.request<{ data: BackendCourseMember[] }>(`/api/v1/courses/${courseId}/members`);
+    return res.data;
+  }
+
+  public async getGradebook(courseId: number): Promise<BackendGradebook> {
+    const res = await this.request<{ data: BackendGradebook }>(`/api/v1/courses/${courseId}/gradebook`);
+    return res.data;
+  }
+
+  public async saveAttendance(
+    courseId: number,
+    payload: {
+      session_date: string;
+      records: Array<{ student_id: number; status: 'PRESENT' | 'ABSENT' }>;
+    }
+  ): Promise<{ session_id: number }> {
+    const res = await this.request<{ data: { session_id: number } }>(
+      `/api/v1/courses/${courseId}/attendance`,
+      { method: 'PUT', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async saveGradebook(
+    courseId: number,
+    payload: {
+      session_date: string;
+      attendance: Array<{ student_id: number; status: 'PRESENT' | 'ABSENT' }>;
+      marks: Array<{
+        mark_id?: number;
+        student_id: number;
+        assessment_name: string;
+        marks_obtained: number;
+        total_marks: number;
+      }>;
+      delete_mark_ids: number[];
+    }
+  ): Promise<{ attendance: { session_id: number }; marks_saved: number; marks_deleted: number }> {
+    const res = await this.request<{
+      data: { attendance: { session_id: number }; marks_saved: number; marks_deleted: number };
+    }>(`/api/v1/courses/${courseId}/gradebook`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
+  public async createMark(
+    courseId: number,
+    payload: { student_id: number; assessment_name: string; marks_obtained: number; total_marks: number }
+  ): Promise<{ mark: BackendMark }> {
+    const res = await this.request<{ data: { mark: BackendMark } }>(
+      `/api/v1/courses/${courseId}/marks`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async updateMark(
+    courseId: number,
+    markId: number,
+    payload: { marks_obtained: number; total_marks: number }
+  ): Promise<{ mark: BackendMark }> {
+    const res = await this.request<{ data: { mark: BackendMark } }>(
+      `/api/v1/courses/${courseId}/marks/${markId}`,
+      { method: 'PATCH', body: JSON.stringify(payload) }
+    );
+    return res.data;
+  }
+
+  public async deleteMark(courseId: number, markId: number): Promise<{ deleted: boolean }> {
+    const res = await this.request<{ data: { deleted: boolean } }>(
+      `/api/v1/courses/${courseId}/marks/${markId}`,
+      { method: 'DELETE' }
+    );
     return res.data;
   }
 

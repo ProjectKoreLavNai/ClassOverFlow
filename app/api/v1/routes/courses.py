@@ -36,6 +36,15 @@ async def get_course(
     return {"data": await CourseService.get_course(course_id, user, session)}
 
 
+@router.post("/courses/{course_id}/class-code")
+async def generate_course_class_code(
+    course_id: int,
+    user: dict = Depends(require_roles("teacher")),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {"data": await CourseService.generate_class_code(course_id, user, session)}
+
+
 @router.patch("/courses/{course_id}")
 async def update_course(
     course_id: int,
@@ -72,3 +81,12 @@ async def list_course_members(
     session: AsyncSession | None = Depends(get_db_with_user_context),
 ):
     return {"data": await CourseService.list_members(course_id, user, session)}
+
+
+@router.get("/courses/{course_id}/upcoming")
+async def list_course_upcoming(
+    course_id: int,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {"data": await CourseService.list_upcoming(course_id, user, session)}

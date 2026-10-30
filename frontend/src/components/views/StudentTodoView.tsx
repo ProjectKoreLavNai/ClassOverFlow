@@ -1,42 +1,59 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Calendar, CheckCircle2, FileText, UserPlus } from 'lucide-react';
 import { JoinCourseModal } from '../classroom/JoinCourseModal';
 import { getCourseTheme } from '../../utils/courseTheme';
+import { useAuth } from '../../context/AuthContext';
+import api from '../../services/api';
 
 type TodoFilter = 'assigned' | 'missing' | 'done';
 
 export const StudentTodoView: React.FC = () => {
+  const { session } = useAuth();
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [filter, setFilter] = useState<TodoFilter>('assigned');
-  const tasks = [
-    {
-      id: 1,
-      courseCode: 'CSE-3102',
-      course: 'Software Design',
-      title: 'Software Requirements Specification (SRS) & Use Case Model',
-      deadline: 'Oct 25, 11:59 PM',
-      points: '100 points',
-      status: 'assigned' as TodoFilter
-    },
-    {
-      id: 2,
-      courseCode: 'CSE-3101',
-      course: 'Database Systems',
-      title: 'Database ERD Normalization Assignment',
-      deadline: 'Oct 28, 11:59 PM',
-      points: '50 points',
-      status: 'assigned' as TodoFilter
-    },
-    {
-      id: 3,
-      courseCode: 'CSE-3102',
-      course: 'Software Design',
-      title: 'Formative AI Quiz on Behavioral Design Patterns',
-      deadline: 'Nov 02, 10:00 PM',
-      points: '10 questions',
-      status: 'assigned' as TodoFilter
-    }
-  ];
+  const [tasks, setTasks] = useState<Array<{
+    id: number;
+    courseCode: string;
+    course: string;
+    title: string;
+    deadline: string;
+    points: string;
+    status: TodoFilter;
+  }>>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadTasks = async () => {
+      try {
+        const courses = await api.listCourses();
+        const upcoming = await Promise.all(courses.map(async (course) => ({
+          course,
+          tasks: await api.listCourseUpcoming(course.course_id),
+        })));
+        const now = Date.now();
+        const loadedTasks = upcoming.flatMap(({ course, tasks: courseTasks }) =>
+          courseTasks.map((task) => ({
+            id: task.assignment_id,
+            courseCode: course.course_code,
+            course: course.course_name,
+            title: task.title,
+            deadline: task.deadline ? new Date(task.deadline).toLocaleString() : 'No deadline',
+            points: `${task.total_marks} points`,
+            status: task.deadline && new Date(task.deadline).getTime() < now ? 'missing' as const : 'assigned' as const,
+          }))
+        );
+        if (active) {
+          setTasks(loadedTasks);
+          setLoadError(null);
+        }
+      } catch (error) {
+        if (active) setLoadError(error instanceof Error ? error.message : 'Unable to load coursework');
+      }
+    };
+    if (session?.role === 'student' || session?.role === 'cr') void loadTasks();
+    return () => { active = false; };
+  }, [session?.id, session?.role]);
 
   const counts = {
     assigned: tasks.filter((t) => t.status === 'assigned').length,
@@ -77,7 +94,7 @@ export const StudentTodoView: React.FC = () => {
       </div>
 
       {visible.length === 0 ? (
-        <p className="panel muted">{emptyText[filter]}</p>
+        <p className="panel muted">{loadError || emptyText[filter]}</p>
       ) : (
         <ul className="todo-list">
           {visible.map((task) => (

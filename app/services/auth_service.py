@@ -224,20 +224,17 @@ class AuthService:
         )
         if current is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
-        email = str(values.get("email", current["email"])).casefold()
+        email = current["email"]
         username = values.get("username", current["username"])
         if any(
             stored_email != current["email"]
             and (
-                stored_email == email
-                or profile["username"].casefold() == username.casefold()
+                profile["username"].casefold() == username.casefold()
             )
             for stored_email, profile in InMemoryStore.users.items()
         ):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email or username already exists")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
         updated = {**current, **values, "email": email, "username": username}
-        if email != current["email"]:
-            del InMemoryStore.users[current["email"]]
         InMemoryStore.users[email] = updated
         return {
             "user_id": updated["user_id"],
@@ -255,15 +252,18 @@ class AuthService:
         role: str | None = None,
         search: str | None = None,
         limit: int = 20,
+        offset: int = 0,
         session: AsyncSession | None = None,
     ) -> list[dict]:
         if user["role"] != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
         if session is not None:
-            profiles = await UserRepository(session).list_users(role=role, search=search, limit=limit)
-            for profile in profiles:
-                profile["role"] = profile["role"].lower()
-            return profiles
+            return await UserRepository(session).list_users(
+                role=role,
+                search=search,
+                limit=limit,
+                offset=offset,
+            )
 
         profiles = [
             {
@@ -273,6 +273,7 @@ class AuthService:
                 "username": entry["username"],
                 "email": entry["email"],
                 "phone": entry.get("phone"),
+                "is_verified": entry.get("is_verified", False),
             }
             for entry in InMemoryStore.users.values()
         ]
@@ -284,4 +285,56 @@ class AuthService:
                 entry for entry in profiles
                 if any(term in str(entry[field]).casefold() for field in ("full_name", "username", "email"))
             ]
-        return sorted(profiles, key=lambda entry: entry["user_id"])[:limit]
+        return sorted(profiles, key=lambda entry: entry["user_id"])[offset : offset + limit]
+
+    @staticmethod
+    async def update_admin_user(
+        actor: dict,
+        user_id: int,
+        values: dict,
+        session: AsyncSession | None,
+    ) -> dict:
+        AuthService._require_admin_database(actor, session)
+        if user_id == actor["user_id"] and values.get("role") not in (None, "admin"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Administrators cannot change their own role",
+            )
+        try:
+            profile = await UserRepository(session).update_admin_user(
+                user_id,
+                role=values.get("role"),
+                is_verified=values.get("is_verified"),
+            )
+            if profile is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            await session.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        return profile
+
+    @staticmethod
+    async def delete_admin_user(actor: dict, user_id: int, session: AsyncSession | None) -> None:
+        AuthService._require_admin_database(actor, session)
+        if user_id == actor["user_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The active administrator account cannot be deleted",
+            )
+        try:
+            deleted = await UserRepository(session).delete_admin_user(user_id)
+            if not deleted:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            await session.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    @staticmethod
+    def _require_admin_database(actor: dict, session: AsyncSession | None) -> None:
+        if actor["role"] != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Persistent administrator storage is unavailable",
+            )

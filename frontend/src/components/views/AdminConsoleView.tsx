@@ -1,14 +1,35 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { AdminUserManagement } from '../admin/AdminUserManagement';
-
-const COURSES = [
-  { code: 'CSE-3102', name: 'Software Design and Development', term: 'Fall 2026', active: true },
-  { code: 'CSE-3101', name: 'Database Management Systems', term: 'Fall 2026', active: true },
-  { code: 'CSE-2201', name: 'Data Structures and Algorithms', term: 'Spring 2026', active: false }
-];
+import api, { type BackendCourse } from '../../services/api';
 
 export const AdminConsoleView: React.FC = () => {
+  const [courses, setCourses] = useState<BackendCourse[]>([]);
+  const [courseError, setCourseError] = useState<string | null>(null);
+
+  const refreshCourses = async () => {
+    try {
+      setCourses(await api.listCourses());
+      setCourseError(null);
+    } catch (error) {
+      setCourseError(error instanceof Error ? error.message : 'Unable to load courses');
+    }
+  };
+
+  useEffect(() => {
+    void refreshCourses();
+  }, []);
+
+  const decommissionCourse = async (course: BackendCourse) => {
+    if (!window.confirm(`Permanently decommission ${course.course_code}: ${course.course_name}?`)) return;
+    try {
+      await api.deleteCourse(course.course_id);
+      setCourses((current) => current.filter((entry) => entry.course_id !== course.course_id));
+    } catch (error) {
+      setCourseError(error instanceof Error ? error.message : 'Unable to decommission course');
+    }
+  };
+
   return (
     <div className="page">
       <div className="page-head">
@@ -27,22 +48,25 @@ export const AdminConsoleView: React.FC = () => {
         <section className="panel" aria-labelledby="courses-title">
           <div className="panel-head" style={{ marginBottom: '4px' }}>
             <h2 id="courses-title" className="panel-title">Courses</h2>
-            <span className="panel-note num">{COURSES.length} courses</span>
+            <span className="panel-note num">{courses.length} courses</span>
           </div>
           <p className="panel-desc" style={{ marginTop: 0, marginBottom: '4px' }}>
             Only administrators can decommission a course.
           </p>
 
           <ul className="rows">
-            {COURSES.map((c) => (
-              <li key={c.code} className="row">
+            {courseError && <li className="row notice notice-negative" role="alert">{courseError}</li>}
+            {courses.map((course) => (
+              <li key={course.course_id} className="row">
                 <div className="row-main">
-                  <span className="row-title">{c.code}: {c.name}</span>
-                  <span className="row-meta">{c.active ? 'Active' : 'Archived'} · {c.term}</span>
+                  <span className="row-title">{course.course_code}: {course.course_name}</span>
+                  <span className="row-meta">
+                    {course.teacher_email || 'Teacher'} · {course.students_count ?? 0} students
+                  </span>
                 </div>
                 <button
                   className="btn btn-destructive btn-sm"
-                  onClick={() => alert(`Admin decommission action triggered for course ${c.code}`)}
+                  onClick={() => void decommissionCourse(course)}
                 >
                   <Trash2 size={14} aria-hidden="true" />
                   <span>Decommission</span>

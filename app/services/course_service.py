@@ -114,6 +114,37 @@ class CourseService:
         return course
 
     @staticmethod
+    async def generate_class_code(
+        course_id: int,
+        user: dict,
+        session: AsyncSession | None = None,
+    ) -> dict:
+        if session is not None:
+            repository = CourseRepository(session)
+            course = await repository.get_by_id(course_id)
+            if course is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+            if user["role"] != "teacher" or course["teacher_id"] != user["user_id"]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course owner access required")
+
+            class_code = secrets.token_urlsafe(9)
+            class_code_hash = await repository.hash_class_code(class_code)
+            await repository.update_class_code_hash(course_id, class_code_hash)
+            await session.commit()
+            return {"class_code": class_code}
+
+        course = CourseService._get_course(course_id)
+        CourseService._require_owner(course, user)
+        class_code = secrets.token_urlsafe(9)
+        while any(
+            other_id != course_id and other.get("class_code") == class_code
+            for other_id, other in InMemoryStore.courses.items()
+        ):
+            class_code = secrets.token_urlsafe(9)
+        course["class_code"] = class_code
+        return {"class_code": class_code}
+
+    @staticmethod
     async def get_course(course_id: int, user: dict, session: AsyncSession | None = None) -> dict:
         if session is not None:
             return await CourseService.require_course_access(course_id, user, session)
@@ -196,8 +227,8 @@ class CourseService:
         user: dict,
         session: AsyncSession | None = None,
     ) -> dict:
-        if user["role"] != "student":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students can join courses")
+        if user["role"] not in ("student", "cr"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students and class representatives can join courses")
         if session is not None:
             repository = CourseRepository(session)
             matched_id = await repository.find_by_class_code(class_code)
@@ -205,13 +236,13 @@ class CourseService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class code")
             await repository.enroll(course_id, user["user_id"])
             await session.commit()
-            return {"course_id": course_id, "role": "student"}
+            return {"course_id": course_id, "role": user["role"]}
 
         course = CourseService._get_course(course_id)
         if not secrets.compare_digest(course["class_code"], class_code):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid class code")
         InMemoryStore.memberships.add((course_id, user["email"]))
-        return {"course_id": course_id, "role": "student"}
+        return {"course_id": course_id, "role": user["role"]}
 
     @staticmethod
     async def join_by_code(
@@ -219,8 +250,8 @@ class CourseService:
         user: dict,
         session: AsyncSession | None = None,
     ) -> dict:
-        if user["role"] != "student":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students can join courses")
+        if user["role"] not in ("student", "cr"):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only students and class representatives can join courses")
 
         if session is not None:
             course_id = await CourseRepository(session).find_by_class_code(class_code)
@@ -228,7 +259,7 @@ class CourseService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
             await CourseRepository(session).enroll(course_id, user["user_id"])
             await session.commit()
-            return {"course_id": course_id, "role": "student"}
+            return {"course_id": course_id, "role": user["role"]}
 
         course = next(
             (
@@ -240,7 +271,7 @@ class CourseService:
         if course is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
         InMemoryStore.memberships.add((course["course_id"], user["email"]))
-        return {"course_id": course["course_id"], "role": "student"}
+        return {"course_id": course["course_id"], "role": user["role"]}
 
     @staticmethod
     async def list_members(
@@ -255,7 +286,7 @@ class CourseService:
         for joined_course_id, email in sorted(InMemoryStore.memberships):
             if joined_course_id != course_id:
                 continue
-            if user["role"] == "student" and email != user["email"]:
+            if user["role"] in ("student", "cr") and email != user["email"]:
                 continue
             student = InMemoryStore.users.get(email)
             if student is not None:
@@ -271,6 +302,21 @@ class CourseService:
         return members
 
     @staticmethod
+    async def list_upcoming(
+        course_id: int,
+        user: dict,
+        session: AsyncSession | None = None,
+    ) -> list[dict]:
+        await CourseService.require_course_access(course_id, user, session)
+        if session is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Persistent upcoming coursework storage is unavailable",
+            )
+
+        return await CourseRepository(session).list_upcoming(course_id)
+
+    @staticmethod
     async def require_course_access(
         course_id: int,
         user: dict,
@@ -284,7 +330,7 @@ class CourseService:
                 return course
             if user["role"] == "teacher" and course["teacher_id"] == user["user_id"]:
                 return course
-            if user["role"] == "student" and await CourseRepository(session).is_enrolled(
+            if user["role"] in ("student", "cr") and await CourseRepository(session).is_enrolled(
                 course_id,
                 user["user_id"],
             ):

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   ShieldCheck,
@@ -10,7 +10,9 @@ import {
   Building,
   Mail,
   Phone,
-  Hash
+  Hash,
+  Pencil,
+  Save
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -20,9 +22,44 @@ interface Props {
 }
 
 export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
-  const { session } = useAuth();
+  const { session, updateProfile } = useAuth();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [profileFeedback, setProfileFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+  const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    if (!session) return;
+    setFullName(session.name);
+    setUsername(session.username || session.email.split('@')[0]);
+    setPhone(session.phone || '');
+  }, [session, isOpen]);
 
   if (!isOpen || !session) return null;
+
+  const handleProfileSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSaving(true);
+    setProfileFeedback(null);
+    try {
+      await updateProfile({
+        fullName,
+        username,
+        ...(session.role !== 'admin' ? { phone } : {}),
+      });
+      setIsEditing(false);
+      setProfileFeedback({ type: 'success', message: 'Profile updated.' });
+    } catch (error) {
+      setProfileFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Unable to update profile',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Master capability list - each mapped to its session permission check
   const systemFeatures = [
@@ -165,44 +202,85 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
         </div>
 
-        {/* Academic Details Section */}
-        <div
-          style={{
-            backgroundColor: 'var(--color-surface-sunken)',
-            border: '1px solid var(--color-border)',
-            borderRadius: '8px',
-            padding: '1rem',
-            marginBottom: '1.5rem',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '0.75rem',
-            fontSize: '0.84rem'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
-            <Mail size={15} color="var(--color-accent-text)" />
-            <span style={{ color: 'var(--color-foreground)' }}>{session.email}</span>
-          </div>
+        {profileFeedback && (
+          <p className={`notice ${profileFeedback.type === 'error' ? 'notice-negative' : 'notice-positive'}`} role={profileFeedback.type === 'error' ? 'alert' : 'status'}>
+            {profileFeedback.message}
+          </p>
+        )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
-            <Building size={15} color="var(--color-accent-text)" />
-            <span style={{ color: 'var(--color-foreground)' }}>{session.department}</span>
-          </div>
-
-          {session.roll && (
+        {isEditing ? (
+          <form
+            id="profile-update-form"
+            onSubmit={handleProfileSubmit}
+            style={{
+              backgroundColor: 'var(--color-surface-sunken)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.85rem',
+            }}
+          >
+            <label className="field">
+              <span className="field-label">Full name</span>
+              <input className="input" value={fullName} onChange={(event) => setFullName(event.target.value)} required maxLength={100} />
+            </label>
+            <label className="field">
+              <span className="field-label">Username</span>
+              <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={50} />
+            </label>
+            <label className="field">
+              <span className="field-label">Email (cannot be changed)</span>
+              <input className="input" type="email" value={session.email} readOnly aria-readonly="true" />
+            </label>
+            {session.role !== 'admin' && (
+              <label className="field">
+                <span className="field-label">Phone</span>
+                <input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={20} />
+              </label>
+            )}
+          </form>
+        ) : (
+          <div
+            style={{
+              backgroundColor: 'var(--color-surface-sunken)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginBottom: '1.5rem',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '0.75rem',
+              fontSize: '0.84rem'
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
-              <Hash size={15} color="var(--color-accent-text)" />
-              <span style={{ color: 'var(--color-foreground)' }}>Roll / ID: {session.roll}</span>
+              <Mail size={15} color="var(--color-accent-text)" />
+              <span style={{ color: 'var(--color-foreground)' }}>{session.email}</span>
             </div>
-          )}
 
-          {session.phone && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
-              <Phone size={15} color="var(--color-accent-text)" />
-              <span style={{ color: 'var(--color-foreground)' }}>{session.phone}</span>
+              <Building size={15} color="var(--color-accent-text)" />
+              <span style={{ color: 'var(--color-foreground)' }}>{session.department}</span>
             </div>
-          )}
-        </div>
+
+            {session.roll && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
+                <Hash size={15} color="var(--color-accent-text)" />
+                <span style={{ color: 'var(--color-foreground)' }}>Roll / ID: {session.roll}</span>
+              </div>
+            )}
+
+            {session.phone && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-muted-foreground)' }}>
+                <Phone size={15} color="var(--color-accent-text)" />
+                <span style={{ color: 'var(--color-foreground)' }}>{session.phone}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Authorized Features Section (Unauthorized features removed) */}
         <div>
@@ -273,9 +351,41 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
         {/* Footer Actions */}
         <div style={{ marginTop: '1.75rem', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>
-            Close Profile
-          </button>
+          {isEditing ? (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setIsEditing(false);
+                  setProfileFeedback(null);
+                }}
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button className="btn btn-primary btn-sm" type="submit" form="profile-update-form" disabled={isSaving}>
+                <Save size={14} />
+                {isSaving ? 'Saving…' : 'Save changes'}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setProfileFeedback(null);
+                  setIsEditing(true);
+                }}
+              >
+                <Pencil size={14} />
+                Edit profile
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={onClose}>
+                Close Profile
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -8,10 +8,9 @@
  * Satisfies the strict ≤3-click usability requirement.
  */
 
-import { CourseBlueprint, type CurriculumUnit, type EnrolledStudent } from '../prototype/CoursePrototype';
+import { CourseBlueprint, type EnrolledStudent } from '../prototype/CoursePrototype';
 import { CourseEventPublisher, type AcademicEvent } from '../observer/CourseEventPublisher';
 import { SecurityBouncerProxy } from '../proxy/SecurityBouncerProxy';
-import { getCourseTheme } from '../../utils/courseTheme';
 import type { IUserSession } from '../../types/auth';
 import api from '../../services/api';
 
@@ -39,42 +38,40 @@ export class ClassroomAcademicFacade {
     this.publisher = CourseEventPublisher.getInstance();
     this.courses = this.loadCoursesFromStorage();
     this.announcements = this.loadAnnouncementsFromStorage();
-    this.syncWithBackend().catch(() => {});
   }
 
   public async syncWithBackend(): Promise<void> {
-    try {
-      const backendCourses = await api.listCourses();
-      if (Array.isArray(backendCourses) && backendCourses.length > 0) {
-        for (const bc of backendCourses) {
-          const existing = this.courses.find(c => c.code.toLowerCase() === bc.course_code.toLowerCase());
-          if (!existing) {
-            const blueprint = new CourseBlueprint(
-              bc.course_code,
-              bc.course_name,
-              bc.teacher_email ? bc.teacher_email.split('@')[0] : 'Faculty',
-              'Fall 2026',
-              bc.class_code || `CO-${Math.floor(1000 + Math.random() * 9000)}`,
-              '#eeeeee',
-              0,
-              [],
-              { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
-              'Section A • 3.0 Credits',
-              'Active',
-              ['Backend Synced'],
-              bc.created_at || new Date().toISOString(),
-              []
-            );
-            this.courses.push(blueprint);
-          } else if (bc.class_code) {
-            existing.cohortCode = bc.class_code;
-          }
-        }
-        this.saveCoursesToStorage(this.courses);
-      }
-    } catch {
-      // Backend not yet ready or offline
-    }
+    const backendCourses = await api.listCourses();
+    const courseMembers = await Promise.all(
+      backendCourses.map((backendCourse) => api.listCourseMembers(backendCourse.course_id))
+    );
+    this.courses = backendCourses.map((backendCourse, index) => {
+      const members: EnrolledStudent[] = courseMembers[index].map((member) => ({
+        id: String(member.student_id),
+        name: member.full_name,
+        email: member.email,
+        avatar: member.full_name.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
+        joinedAt: member.enrolled_at ? new Date(member.enrolled_at).toLocaleDateString() : '',
+      }));
+      return new CourseBlueprint(
+        backendCourse.course_code,
+        `${backendCourse.course_code}: ${backendCourse.course_name}`,
+        backendCourse.teacher_name || backendCourse.teacher_email || 'Course teacher',
+        'Current term',
+        backendCourse.class_code || '',
+        '#eeeeee',
+        backendCourse.students_count ?? 0,
+        [],
+        { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
+        backendCourse.description || '',
+        '',
+        [],
+        backendCourse.created_at || new Date().toISOString(),
+        members,
+        backendCourse.course_id
+      );
+    });
+    this.saveCoursesToStorage(this.courses);
   }
 
   public static getInstance(): ClassroomAcademicFacade {
@@ -87,323 +84,8 @@ export class ClassroomAcademicFacade {
   /**
    * The exact 4 academic courses matching index.html lines 1442–1560
    */
-  private getDefaultCourses(): CourseBlueprint[] {
-    const defaultUnitsCSE3102: CurriculumUnit[] = [
-      {
-        unitNumber: 1,
-        title: 'Requirements Engineering & UML Modeling',
-        topics: [
-          {
-            id: 't-1',
-            title: 'Use Case Modeling & SRS Documentation',
-            durationHours: 3,
-            learningObjectives: ['Draft actor-boundary diagrams', 'Establish functional requirements'],
-            isCompleted: true
-          },
-          {
-            id: 't-2',
-            title: 'Class Diagrams & Object Structural Relationships',
-            durationHours: 3,
-            learningObjectives: ['Analyze aggregation vs composition', 'Implement dependency inversions'],
-            isCompleted: true
-          }
-        ]
-      },
-      {
-        unitNumber: 2,
-        title: 'Creational & Structural Design Patterns',
-        topics: [
-          {
-            id: 't-3',
-            title: 'Singleton & Factory Method Patterns',
-            durationHours: 4,
-            learningObjectives: ['Single source of truth', 'Dynamic session instantiation'],
-            isCompleted: true
-          },
-          {
-            id: 't-4',
-            title: 'Prototype & Facade Patterns',
-            durationHours: 4,
-            learningObjectives: ['Deep-copying course blueprints', 'Classroom unified operations facade'],
-            isCompleted: true
-          }
-        ]
-      },
-      {
-        unitNumber: 3,
-        title: 'Behavioral Patterns & Architectural Reliability',
-        topics: [
-          {
-            id: 't-5',
-            title: 'Observer Pattern & Multi-Channel Event Bus',
-            durationHours: 4,
-            learningObjectives: ['Event-driven notifications', 'Discord webhook integrations'],
-            isCompleted: false
-          },
-          {
-            id: 't-6',
-            title: 'Chain of Responsibility & RBAC Security Proxy',
-            durationHours: 3,
-            learningObjectives: ['Sequential security gates', 'HTTP 403 access control enforcement'],
-            isCompleted: false
-          }
-        ]
-      }
-    ];
-
-    const defaultUnitsCSE3101: CurriculumUnit[] = [
-      {
-        unitNumber: 1,
-        title: 'Relational Model & Normalization',
-        topics: [
-          {
-            id: 'db-1',
-            title: '1NF, 2NF, 3NF & BCNF Normalization',
-            durationHours: 4,
-            learningObjectives: ['Functional dependencies', 'Lossless decomposition'],
-            isCompleted: true
-          },
-          {
-            id: 'db-2',
-            title: 'Relational Algebra & Query Optimization',
-            durationHours: 4,
-            learningObjectives: ['Selection, projection, joins', 'Heuristic query optimization'],
-            isCompleted: false
-          }
-        ]
-      }
-    ];
-
-    const defaultUnitsCSE3104: CurriculumUnit[] = [
-      {
-        unitNumber: 1,
-        title: 'Process Management & Concurrency',
-        topics: [
-          {
-            id: 'os-1',
-            title: 'Process Scheduling Algorithms (Round Robin, Multilevel)',
-            durationHours: 4,
-            learningObjectives: ['CPU scheduling metrics', 'Context switching overhead'],
-            isCompleted: true
-          },
-          {
-            id: 'os-2',
-            title: 'Multithreading & Semaphore Synchronization',
-            durationHours: 4,
-            learningObjectives: ['Critical section problem', 'Dining philosophers solution'],
-            isCompleted: false
-          }
-        ]
-      }
-    ];
-
-    const defaultUnitsCSE3106: CurriculumUnit[] = [
-      {
-        unitNumber: 1,
-        title: 'Supervised Learning & Optimization',
-        topics: [
-          {
-            id: 'ml-1',
-            title: 'Linear & Logistic Regression with Gradient Descent',
-            durationHours: 4,
-            learningObjectives: ['Loss function convexity', 'Learning rate tuning'],
-            isCompleted: true
-          },
-          {
-            id: 'ml-2',
-            title: 'Neural Networks & Backpropagation',
-            durationHours: 4,
-            learningObjectives: ['Activation functions', 'Chain rule in weight updates'],
-            isCompleted: true
-          },
-          {
-            id: 'ml-3',
-            title: 'Decision Trees & Random Forests',
-            durationHours: 3,
-            learningObjectives: ['Information gain & Gini impurity', 'Bagging ensemble methods'],
-            isCompleted: false
-          }
-        ]
-      }
-    ];
-
-    const defaultStudentsCSE3102: EnrolledStudent[] = [
-      {
-        id: 'usr-stud-1',
-        name: 'Kiyotaka Ayanokoji',
-        email: 'ayanokoji.student@university.edu',
-        roll: '14',
-        avatar: 'KA',
-        joinedAt: 'Aug 15, 2026'
-      },
-      {
-        id: 'usr-cr-1',
-        name: 'Daemon Targaryen',
-        email: 'daemon.cr@university.edu',
-        roll: '55',
-        avatar: 'DT',
-        joinedAt: 'Aug 15, 2026'
-      },
-      {
-        id: 'usr-adm-1',
-        name: 'Aizen Sosuke',
-        email: 'aizen.admin@university.edu',
-        roll: '03',
-        avatar: 'AS',
-        joinedAt: 'Aug 15, 2026'
-      }
-    ];
-
-    const defaultStudentsCSE3101: EnrolledStudent[] = [
-      {
-        id: 'usr-stud-1',
-        name: 'Kiyotaka Ayanokoji',
-        email: 'ayanokoji.student@university.edu',
-        roll: '14',
-        avatar: 'KA',
-        joinedAt: 'Aug 16, 2026'
-      },
-      {
-        id: 'usr-cr-1',
-        name: 'Daemon Targaryen',
-        email: 'daemon.cr@university.edu',
-        roll: '55',
-        avatar: 'DT',
-        joinedAt: 'Aug 16, 2026'
-      }
-    ];
-
-    const defaultStudentsCSE3104: EnrolledStudent[] = [
-      {
-        id: 'usr-cr-1',
-        name: 'Daemon Targaryen',
-        email: 'daemon.cr@university.edu',
-        roll: '55',
-        avatar: 'DT',
-        joinedAt: 'Aug 17, 2026'
-      }
-    ];
-
-    const defaultStudentsCSE3106: EnrolledStudent[] = [
-      {
-        id: 'usr-cr-1',
-        name: 'Daemon Targaryen',
-        email: 'daemon.cr@university.edu',
-        roll: '55',
-        avatar: 'DT',
-        joinedAt: 'Aug 18, 2026'
-      }
-    ];
-
-    return [
-      // Card 1: CSE-3102 from index.html line 1443
-      new CourseBlueprint(
-        'CSE-3102',
-        'CSE-3102: Software Design & Dev',
-        'Gojo Satoru',
-        'Fall 2026',
-        'c7x9-cse3102',
-        '#eeeeee', // display colour comes from getCourseTheme
-        58,
-        defaultUnitsCSE3102,
-        { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
-        'Section A • Room 402 • 3.0 Credits',
-        'Due Friday, 11:59 PM: SRS Specification Draft',
-        ['AI Assisted', 'Discord Synced'],
-        '2026-08-15T00:00:00.000Z',
-        defaultStudentsCSE3102
-      ),
-      // Card 2: CSE-3101 from index.html line 1473
-      new CourseBlueprint(
-        'CSE-3101',
-        'CSE-3101: Database Systems',
-        'Gojo Satoru',
-        'Fall 2026',
-        'd3b1-cse3101',
-        '#eeeeee', // display colour comes from getCourseTheme
-        58,
-        defaultUnitsCSE3101,
-        { quizzes: 20, assignments: 25, attendance: 15, finalExam: 40 },
-        'Section A • Room 305 • 3.0 Credits',
-        'Due Monday: Relational Algebra Lab 4',
-        ['3 Tasks Active'],
-        '2026-08-16T00:00:00.000Z',
-        defaultStudentsCSE3101
-      ),
-      // Card 3: CSE-3104 from index.html line 1502
-      new CourseBlueprint(
-        'CSE-3104',
-        'CSE-3104: Operating Systems',
-        'Dr. Tanvir Ahmed',
-        'Fall 2026',
-        'os50-cse3104',
-        '#eeeeee', // display colour comes from getCourseTheme
-        60,
-        defaultUnitsCSE3104,
-        { quizzes: 10, assignments: 50, attendance: 10, finalExam: 30 },
-        'Section A • Room 501 • 3.0 Credits',
-        'Due Oct 29: Multithreading Semaphore Project',
-        ['AI Quiz Ready'],
-        '2026-08-17T00:00:00.000Z',
-        defaultStudentsCSE3104
-      ),
-      // Card 4: CSE-3106 from index.html line 1531
-      new CourseBlueprint(
-        'CSE-3106',
-        'CSE-3106: Machine Learning',
-        'Dr. Nusrat Jahan',
-        'Fall 2026',
-        'ml78-cse3106',
-        '#eeeeee', // display colour comes from getCourseTheme
-        55,
-        defaultUnitsCSE3106,
-        { quizzes: 25, assignments: 35, attendance: 10, finalExam: 30 },
-        'Section B • Lab 2 • 3.0 Credits',
-        'Upcoming: Gradient Descent Analysis',
-        ['Graded'],
-        '2026-08-18T00:00:00.000Z',
-        defaultStudentsCSE3106
-      )
-    ];
-  }
-
   private loadCoursesFromStorage(): CourseBlueprint[] {
-    try {
-      const data = localStorage.getItem('classoverflow_courses_v2_5') || localStorage.getItem('classoverflow_courses_v2_4');
-      if (data) {
-        const parsed = JSON.parse(data);
-        const defaults = this.getDefaultCourses();
-        return parsed.map(
-          (c: any, idx: number) => {
-            const theme = getCourseTheme(c, idx);
-            const matchingDefault = defaults.find((d) => d.code === c.code);
-            const enrolled = Array.isArray(c.enrolledStudents) && c.enrolledStudents.length > 0
-              ? c.enrolledStudents
-              : (matchingDefault?.enrolledStudents || []);
-
-            return new CourseBlueprint(
-              c.code,
-              c.title,
-              c.instructor,
-              c.term,
-              c.cohortCode,
-              theme.banner,
-              c.studentsCount || (enrolled.length > 0 ? enrolled.length : 50),
-              c.units,
-              c.gradingWeights,
-              c.sectionInfo,
-              c.duePreview,
-              c.tags,
-              c.createdAt,
-              enrolled
-            );
-          }
-        );
-      }
-    } catch {}
-    const defaults = this.getDefaultCourses();
-    this.saveCoursesToStorage(defaults);
-    return defaults;
+    return [];
   }
 
   private saveCoursesToStorage(courses: CourseBlueprint[]): void {

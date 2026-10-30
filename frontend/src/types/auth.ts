@@ -12,6 +12,7 @@ export interface AcademicUser {
   email: string;
   password?: string;
   fullName: string;
+  username?: string;
   role: AcademicRole;
   department: string;
   roll?: string;
@@ -20,6 +21,7 @@ export interface AcademicUser {
   isVerified: boolean;
   isInstitutional: boolean;
   createdAt?: string;
+  token?: string;
 }
 
 export interface FilterResult {
@@ -55,6 +57,7 @@ export interface AuthPermissions {
 export interface IUserSession extends AuthPermissions {
   id: string;
   name: string;
+  username?: string;
   email: string;
   role: AcademicRole;
   department: string;

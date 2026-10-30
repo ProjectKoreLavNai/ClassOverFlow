@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.db.database import get_db, get_db_with_user_context
-from app.schemas.auth import RefreshRequest, UserLogin, UserRegister, UserUpdate
+from app.schemas.auth import AdminUserUpdate, RefreshRequest, UserLogin, UserRegister, UserUpdate
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
@@ -67,6 +67,7 @@ async def list_users(
     role: str | None = Query(default=None, pattern="^(student|teacher|admin|cr)$"),
     search: str | None = Query(default=None, min_length=1, max_length=150),
     limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     user: dict = Depends(require_roles("admin")),
     session: AsyncSession | None = Depends(get_db_with_user_context),
 ):
@@ -76,6 +77,7 @@ async def list_users(
             role=role,
             search=search,
             limit=limit,
+            offset=offset,
             session=session,
         )
     }
@@ -94,3 +96,30 @@ async def update_user_profile(
             session,
         )
     }
+
+
+@users_router.patch("/{user_id}")
+async def admin_update_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    user: dict = Depends(require_roles("admin")),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {
+        "data": await AuthService.update_admin_user(
+            user,
+            user_id,
+            payload.model_dump(exclude_unset=True),
+            session,
+        )
+    }
+
+
+@users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def admin_delete_user(
+    user_id: int,
+    user: dict = Depends(require_roles("admin")),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    await AuthService.delete_admin_user(user, user_id, session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
