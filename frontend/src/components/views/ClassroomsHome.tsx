@@ -46,13 +46,9 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
   const { session, setViolation } = useAuth();
   const facade = ClassroomAcademicFacade.getInstance();
 
-<<<<<<< HEAD
   const [courses, setCourses] = useState<CourseBlueprint[]>(facade.getCourses());
   const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
-=======
-  const [, setRenderTrigger] = useState(0);
-  const refreshCourses = () => setRenderTrigger((n) => n + 1);
->>>>>>> 9d24ba058ffd8b31c9a0ee29f88b48a7e6158cc5
+  const refreshCourses = () => setCourses(facade.getCourses());
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinPrefillCode, setJoinPrefillCode] = useState('');

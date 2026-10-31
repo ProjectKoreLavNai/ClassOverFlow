@@ -102,9 +102,11 @@ export interface BackendAnnouncement {
 export interface BackendComment {
   comment_id: number;
   announcement_id: number;
-  content: string;
-  author_id?: number;
+  user_id: number;
+  comment_text: string;
+  author_name: string;
   author_email?: string;
+  author_role: string;
   created_at?: string;
 }
 
@@ -464,6 +466,17 @@ class ApiClient {
     return res.data;
   }
 
+  public async updateAnnouncement(
+    announcementId: number,
+    payload: { title: string; content: string }
+  ): Promise<BackendAnnouncement> {
+    const res = await this.request<{ data: BackendAnnouncement }>(`/api/v1/announcements/${announcementId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  }
+
   public async deleteAnnouncement(announcementId: number): Promise<void> {
     await this.request(`/api/v1/announcements/${announcementId}`, {
       method: 'DELETE',
@@ -476,11 +489,26 @@ class ApiClient {
     return res.data;
   }
 
-  public async createComment(announcementId: number, content: string): Promise<BackendComment> {
+  public async createComment(announcementId: number, commentText: string): Promise<BackendComment> {
     const res = await this.request<{ data: BackendComment }>(`/api/v1/announcements/${announcementId}/comments`, {
       method: 'POST',
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ comment_text: commentText }),
     });
+    return res.data;
+  }
+
+  public async updateComment(
+    announcementId: number,
+    commentId: number,
+    commentText: string
+  ): Promise<BackendComment> {
+    const res = await this.request<{ data: BackendComment }>(
+      `/api/v1/announcements/${announcementId}/comments/${commentId}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ comment_text: commentText }),
+      }
+    );
     return res.data;
   }
 

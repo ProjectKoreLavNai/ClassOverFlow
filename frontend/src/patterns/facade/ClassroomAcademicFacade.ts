@@ -18,6 +18,7 @@ export interface CourseAnnouncement {
   id: string;
   courseCode: string;
   authorName: string;
+  authorEmail?: string;
   authorRole: string;
   authorAvatar: string;
   title: string;
@@ -68,7 +69,8 @@ export class ClassroomAcademicFacade {
         [],
         backendCourse.created_at || new Date().toISOString(),
         members,
-        backendCourse.course_id
+        backendCourse.course_id,
+        backendCourse.teacher_email
       );
     });
     this.saveCoursesToStorage(this.courses);
@@ -319,6 +321,7 @@ export class ClassroomAcademicFacade {
       ['AI Assisted'],
       new Date().toISOString(),
       [],
+      undefined,
       session.email
     );
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.announcement_comment_repository import AnnouncementCommentRepository
 from app.repositories.announcement_repository import AnnouncementRepository
 from app.repositories.in_memory_store import InMemoryStore
-from app.schemas.announcement_comment import AnnouncementCommentCreate
+from app.schemas.announcement_comment import AnnouncementCommentCreate, AnnouncementCommentUpdate
 from app.services.course_service import CourseService
 
 
@@ -28,7 +28,18 @@ class AnnouncementCommentService:
         announcement = AnnouncementCommentService._get_announcement(announcement_id)
         await CourseService.require_course_access(announcement["course_id"], user)
         return [
-            comment
+            {
+                **comment,
+                "author_name": InMemoryStore.users.get(comment["user_email"], {}).get(
+                    "full_name",
+                    comment["user_email"].split("@")[0],
+                ),
+                "author_email": comment["user_email"],
+                "author_role": InMemoryStore.users.get(comment["user_email"], {}).get(
+                    "role",
+                    "student",
+                ),
+            }
             for comment in InMemoryStore.announcement_comments.values()
             if comment["announcement_id"] == announcement_id
         ]
@@ -68,11 +79,17 @@ class AnnouncementCommentService:
             "comment_id": comment_id,
             "announcement_id": announcement_id,
             "user_id": user["user_id"],
+            "user_email": user["email"],
             "comment_text": payload.comment_text,
             "created_at": None,
         }
         InMemoryStore.announcement_comments[comment_id] = comment
-        return comment
+        return {
+            **comment,
+            "author_name": user["full_name"],
+            "author_email": user["email"],
+            "author_role": user["role"],
+        }
 
     @staticmethod
     async def delete_comment(
@@ -108,6 +125,48 @@ class AnnouncementCommentService:
         if user["user_id"] != comment["user_id"] and not is_course_teacher:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Comment owner or course teacher required")
         del InMemoryStore.announcement_comments[comment_id]
+
+    @staticmethod
+    async def update_comment(
+        comment_id: int,
+        announcement_id: int,
+        payload: AnnouncementCommentUpdate,
+        user: dict,
+        session: AsyncSession | None = None,
+    ) -> dict:
+        AnnouncementCommentService._require_non_admin_access(user)
+        if session is not None:
+            repository = AnnouncementCommentRepository(session)
+            comment = await repository.get_by_id(comment_id)
+            if comment is None or comment["announcement_id"] != announcement_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+            announcement = await AnnouncementRepository(session).get_by_id(announcement_id)
+            if announcement is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
+            await CourseService.require_course_access(announcement["course_id"], user, session)
+            if user["user_id"] != comment["user_id"]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the comment author can edit it")
+            updated = await repository.update(comment_id, payload.comment_text)
+            if updated is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+            await session.commit()
+            return updated
+
+        comment = InMemoryStore.announcement_comments.get(comment_id)
+        if comment is None or comment["announcement_id"] != announcement_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
+        announcement = AnnouncementCommentService._get_announcement(announcement_id)
+        await CourseService.require_course_access(announcement["course_id"], user)
+        if user["user_id"] != comment["user_id"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the comment author can edit it")
+        comment["comment_text"] = payload.comment_text
+        author = InMemoryStore.users.get(comment["user_email"], {})
+        return {
+            **comment,
+            "author_name": author.get("full_name", comment["user_email"].split("@")[0]),
+            "author_email": comment["user_email"],
+            "author_role": author.get("role", "student"),
+        }
 
     @staticmethod
     def _can_comment(user: dict, course: dict, is_enrolled: bool) -> bool:

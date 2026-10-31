@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Copy, Check, ExternalLink,
   CheckCircle2, Circle,
-  Send, UserPlus, Lock
+  Send, UserPlus, Lock, Pencil, Trash2
 } from 'lucide-react';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
@@ -11,7 +11,12 @@ import { JoinCourseModal } from './JoinCourseModal';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { getCourseTheme, getInitials, getPersonTint } from '../../utils/courseTheme';
-import api, { type BackendAssignment, type BackendGradebook, type BackendMark } from '../../services/api';
+import api, {
+  type BackendAssignment,
+  type BackendComment,
+  type BackendGradebook,
+  type BackendMark,
+} from '../../services/api';
 
 interface Props {
   course: CourseBlueprint;
@@ -44,6 +49,15 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
   // Announcements
   const [announcements, setAnnouncements] = useState<CourseAnnouncement[]>([]);
+  const [commentsByAnnouncement, setCommentsByAnnouncement] = useState<Record<number, BackendComment[]>>({});
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<number, string>>({});
+  const [commentFeedback, setCommentFeedback] = useState<Record<number, string>>({});
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [commentActionError, setCommentActionError] = useState<Record<number, string>>({});
+  const [deletingCommentId, setDeletingCommentId] = useState<number | null>(null);
+  const [submittingCommentFor, setSubmittingCommentFor] = useState<number | null>(null);
   const [upcoming, setUpcoming] = useState<BackendAssignment[]>([]);
   const [gradebook, setGradebook] = useState<BackendGradebook | null>(null);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -59,6 +73,11 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const [postContent, setPostContent] = useState('');
   const [streamDiscord, setStreamDiscord] = useState(true);
   const [publishFeedback, setPublishFeedback] = useState<string | null>(null);
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<number | null>(null);
+  const [editingAnnouncementTitle, setEditingAnnouncementTitle] = useState('');
+  const [editingAnnouncementContent, setEditingAnnouncementContent] = useState('');
+  const [announcementActionError, setAnnouncementActionError] = useState<string | null>(null);
+  const [announcementActionInProgress, setAnnouncementActionInProgress] = useState(false);
 
   // Class code state
   const [copiedCode, setCopiedCode] = useState(false);
@@ -69,6 +88,27 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const isEnrolled = isLearner
     ? Boolean(course.courseId)
     : session ? facade.isStudentEnrolled(course.code, session.email) : false;
+  const canPostAnnouncement = Boolean(
+    session
+    && (session.role === 'teacher'
+      ? facade.isTeacherCreator(course, session) || facade.isStudentEnrolled(course.code, session.email)
+      : session.role === 'cr' && facade.isStudentEnrolled(course.code, session.email))
+  );
+  const canComment = Boolean(
+    session
+    && (isLearner
+      ? isEnrolled
+      : session.role === 'teacher' && facade.isTeacherCreator(course, session))
+  );
+  const isCourseTeacher = Boolean(
+    session?.role === 'teacher' && facade.isTeacherCreator(course, session)
+  );
+  const isOwnComment = (comment: BackendComment) => Boolean(
+    session && (
+      session.email.trim().toLowerCase() === comment.author_email?.trim().toLowerCase()
+      || session.id.replace(/^usr_/, '') === String(comment.user_id)
+    )
+  );
 
   const refreshCourseData = async () => {
     if (!course.courseId) return;
@@ -78,10 +118,28 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
         api.listCourseUpcoming(course.courseId),
         api.getGradebook(course.courseId),
       ]);
+      const commentResults = await Promise.allSettled(
+        announcementRows.map(async (announcement) => [
+          Number(announcement.announcement_id),
+          await api.listComments(announcement.announcement_id),
+        ] as const)
+      );
+      const loadedComments: Record<number, BackendComment[]> = {};
+      let failedCommentRequests = false;
+      for (const result of commentResults) {
+        if (result.status === 'fulfilled') {
+          loadedComments[result.value[0]] = result.value[1];
+        } else {
+          failedCommentRequests = true;
+        }
+      }
+      setCommentsByAnnouncement(loadedComments);
+      setCommentsError(failedCommentRequests ? 'Some announcement comments could not be loaded.' : null);
       setAnnouncements(announcementRows.map((item) => ({
         id: String(item.announcement_id),
         courseCode: course.code,
         authorName: item.author_email?.split('@')[0] || 'Teacher',
+        authorEmail: item.author_email,
         authorRole: 'Teacher',
         authorAvatar: getInitials(item.author_email?.split('@')[0] || 'Teacher'),
         title: item.title,
@@ -320,6 +378,117 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
       setTimeout(() => setPublishFeedback(null), 4000);
     } catch (error) {
       setPublishFeedback(error instanceof Error ? error.message : 'Unable to publish announcement');
+    }
+  };
+
+  const handleUpdateAnnouncement = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (editingAnnouncementId === null) return;
+    setAnnouncementActionInProgress(true);
+    setAnnouncementActionError(null);
+    try {
+      await api.updateAnnouncement(editingAnnouncementId, {
+        title: editingAnnouncementTitle.trim(),
+        content: editingAnnouncementContent.trim(),
+      });
+      await refreshCourseData();
+      setEditingAnnouncementId(null);
+    } catch (error) {
+      setAnnouncementActionError(error instanceof Error ? error.message : 'Unable to update announcement');
+    } finally {
+      setAnnouncementActionInProgress(false);
+    }
+  };
+
+  const handleDeleteAnnouncement = async (announcementId: number, title: string) => {
+    if (!window.confirm(`Delete the announcement "${title}" and all its comments?`)) return;
+    setAnnouncementActionInProgress(true);
+    setAnnouncementActionError(null);
+    try {
+      await api.deleteAnnouncement(announcementId);
+      setAnnouncements((current) => current.filter((item) => Number(item.id) !== announcementId));
+      setCommentsByAnnouncement((current) => {
+        const remaining = { ...current };
+        delete remaining[announcementId];
+        return remaining;
+      });
+    } catch (error) {
+      setAnnouncementActionError(error instanceof Error ? error.message : 'Unable to delete announcement');
+    } finally {
+      setAnnouncementActionInProgress(false);
+    }
+  };
+
+  const handleComment = async (e: React.FormEvent<HTMLFormElement>, announcementId: number) => {
+    e.preventDefault();
+    const commentText = (commentDrafts[announcementId] || '').trim();
+    if (!commentText || !canComment) return;
+
+    setSubmittingCommentFor(announcementId);
+    setCommentFeedback((current) => ({ ...current, [announcementId]: '' }));
+    try {
+      const comment = await api.createComment(announcementId, commentText);
+      setCommentsByAnnouncement((current) => ({
+        ...current,
+        [announcementId]: [...(current[announcementId] || []), comment],
+      }));
+      setCommentDrafts((current) => ({ ...current, [announcementId]: '' }));
+    } catch (error) {
+      setCommentFeedback((current) => ({
+        ...current,
+        [announcementId]: error instanceof Error ? error.message : 'Unable to post comment',
+      }));
+    } finally {
+      setSubmittingCommentFor(null);
+    }
+  };
+
+  const handleUpdateComment = async (e: React.FormEvent<HTMLFormElement>, announcementId: number, commentId: number) => {
+    e.preventDefault();
+    const commentText = editingCommentText.trim();
+    if (!commentText) return;
+
+    setCommentActionError((current) => ({ ...current, [commentId]: '' }));
+    try {
+      const updatedComment = await api.updateComment(announcementId, commentId, commentText);
+      setCommentsByAnnouncement((current) => ({
+        ...current,
+        [announcementId]: (current[announcementId] || []).map((comment) =>
+          comment.comment_id === commentId ? updatedComment : comment
+        ),
+      }));
+      setEditingCommentId(null);
+      setEditingCommentText('');
+    } catch (error) {
+      setCommentActionError((current) => ({
+        ...current,
+        [commentId]: error instanceof Error ? error.message : 'Unable to edit comment',
+      }));
+    }
+  };
+
+  const handleDeleteComment = async (announcementId: number, commentId: number) => {
+    setDeletingCommentId(commentId);
+    setCommentActionError((current) => ({ ...current, [commentId]: '' }));
+    try {
+      await api.deleteComment(announcementId, commentId);
+      setCommentsByAnnouncement((current) => ({
+        ...current,
+        [announcementId]: (current[announcementId] || []).filter(
+          (comment) => comment.comment_id !== commentId
+        ),
+      }));
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null);
+        setEditingCommentText('');
+      }
+    } catch (error) {
+      setCommentActionError((current) => ({
+        ...current,
+        [commentId]: error instanceof Error ? error.message : 'Unable to delete comment',
+      }));
+    } finally {
+      setDeletingCommentId(null);
     }
   };
 
@@ -579,6 +748,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           {/* Right Column: Announcements Feed */}
           <div className="stack">
             {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
+            {commentsError && <p className="notice notice-negative" role="alert">{commentsError}</p>}
 
             {/* Announcement Composer (Only Teachers & CRs; regular students cannot post) */}
             {canPostAnnouncement && (
@@ -667,10 +837,94 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                       <span className="row-meta" style={{ marginTop: 0 }}>{item.authorRole} · {item.createdAt}</span>
                     </div>
                   </div>
+                  {isCourseTeacher
+                    && session?.email.trim().toLowerCase() === item.authorEmail?.trim().toLowerCase()
+                    && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => {
+                            setAnnouncementActionError(null);
+                            setEditingAnnouncementId(Number(item.id));
+                            setEditingAnnouncementTitle(item.title);
+                            setEditingAnnouncementContent(item.content);
+                          }}
+                          aria-label={`Edit announcement: ${item.title}`}
+                          disabled={announcementActionInProgress}
+                        >
+                          <Pencil size={13} aria-hidden="true" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void handleDeleteAnnouncement(Number(item.id), item.title)}
+                          aria-label={`Delete announcement: ${item.title}`}
+                          disabled={announcementActionInProgress}
+                        >
+                          <Trash2 size={13} aria-hidden="true" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
                 </div>
 
-                <h3 className="post-title">{item.title}</h3>
-                <p className="post-body">{item.content}</p>
+                {editingAnnouncementId === Number(item.id) ? (
+                  <form onSubmit={(event) => void handleUpdateAnnouncement(event)} style={{ marginTop: '14px' }}>
+                    <label className="field">
+                      <span className="field-label">Announcement title</span>
+                      <input
+                        className="input"
+                        value={editingAnnouncementTitle}
+                        onChange={(event) => setEditingAnnouncementTitle(event.target.value)}
+                        maxLength={200}
+                        required
+                      />
+                    </label>
+                    <label className="field">
+                      <span className="field-label">Announcement message</span>
+                      <textarea
+                        className="textarea"
+                        value={editingAnnouncementContent}
+                        onChange={(event) => setEditingAnnouncementContent(event.target.value)}
+                        rows={4}
+                        required
+                      />
+                    </label>
+                    <div className="modal-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setEditingAnnouncementId(null)}
+                        disabled={announcementActionInProgress}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-sm"
+                        disabled={
+                          announcementActionInProgress
+                          || !editingAnnouncementTitle.trim()
+                          || !editingAnnouncementContent.trim()
+                        }
+                      >
+                        Save announcement
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <h3 className="post-title">{item.title}</h3>
+                    <p className="post-body">{item.content}</p>
+                  </>
+                )}
+                {announcementActionError && (
+                  <p className="notice notice-negative" role="alert" style={{ marginTop: '8px' }}>
+                    {announcementActionError}
+                  </p>
+                )}
 
                 <div className="post-foot">
                   <span className="num">{item.likes === 1 ? '1 acknowledgement' : `${item.likes} acknowledgements`}</span>
@@ -681,6 +935,142 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                     </span>
                   )}
                 </div>
+
+                <section aria-label={`Comments on ${item.title}`} style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+                  <h4 className="panel-title" style={{ fontSize: '1rem', marginBottom: '10px' }}>
+                    Comments ({commentsByAnnouncement[Number(item.id)]?.length ?? 0})
+                  </h4>
+                  {(commentsByAnnouncement[Number(item.id)] || []).map((comment) => (
+                    <div key={comment.comment_id} className="post-author" style={{ alignItems: 'flex-start', marginBottom: '12px' }}>
+                      <span className="avatar" style={{ backgroundColor: getPersonTint(comment.author_name) }} aria-hidden="true">
+                        {getInitials(comment.author_name)}
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+                          <span className="row-title">{comment.author_name}</span>
+                          <span className="row-meta" style={{ marginTop: 0 }}>
+                            {comment.author_role} · {comment.created_at ? new Date(comment.created_at).toLocaleString() : 'Just now'}
+                          </span>
+                        </div>
+                        {editingCommentId === comment.comment_id ? (
+                          <form
+                            onSubmit={(event) => void handleUpdateComment(event, Number(item.id), comment.comment_id)}
+                            style={{ marginTop: '6px' }}
+                          >
+                            <label className="field">
+                              <span className="field-label">Edit comment</span>
+                              <textarea
+                                className="textarea"
+                                value={editingCommentText}
+                                onChange={(event) => setEditingCommentText(event.target.value)}
+                                rows={2}
+                                maxLength={5000}
+                                aria-label={`Edit comment by ${comment.author_name}`}
+                                required
+                              />
+                            </label>
+                            <div className="modal-actions">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                  setEditingCommentId(null);
+                                  setEditingCommentText('');
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="btn btn-primary btn-sm"
+                                disabled={!editingCommentText.trim()}
+                              >
+                                Save edit
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <p className="post-body" style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>{comment.comment_text}</p>
+                        )}
+                        {commentActionError[comment.comment_id] && (
+                          <p className="notice notice-negative" role="alert" style={{ marginTop: '8px' }}>
+                            {commentActionError[comment.comment_id]}
+                          </p>
+                        )}
+                        {editingCommentId !== comment.comment_id && (
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                            {isOwnComment(comment) && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => {
+                                  setEditingCommentId(comment.comment_id);
+                                  setEditingCommentText(comment.comment_text);
+                                  setCommentActionError((current) => ({ ...current, [comment.comment_id]: '' }));
+                                }}
+                                aria-label="Edit your comment"
+                              >
+                                <Pencil size={13} aria-hidden="true" />
+                                <span>Edit</span>
+                              </button>
+                            )}
+                            {(isOwnComment(comment) || isCourseTeacher) && (
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => void handleDeleteComment(Number(item.id), comment.comment_id)}
+                                disabled={deletingCommentId === comment.comment_id}
+                                aria-label={isCourseTeacher && !isOwnComment(comment)
+                                  ? `Delete ${comment.author_name}'s comment`
+                                  : 'Delete your comment'}
+                              >
+                                <Trash2 size={13} aria-hidden="true" />
+                                <span>Delete</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {(commentsByAnnouncement[Number(item.id)] || []).length === 0 && (
+                    <p className="muted" style={{ margin: '0 0 12px' }}>No comments yet.</p>
+                  )}
+                  {canComment && (
+                    <form onSubmit={(event) => void handleComment(event, Number(item.id))} style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+                      <label className="field" style={{ flex: 1, marginBottom: 0 }}>
+                        <span className="field-label">Add a comment</span>
+                        <textarea
+                          className="textarea"
+                          name={`comment-${item.id}`}
+                          value={commentDrafts[Number(item.id)] || ''}
+                          onChange={(event) => setCommentDrafts((current) => ({
+                            ...current,
+                            [Number(item.id)]: event.target.value,
+                          }))}
+                          rows={2}
+                          maxLength={5000}
+                          placeholder="Share a comment with your class…"
+                          aria-label={`Add a comment to ${item.title}`}
+                          required
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="btn btn-primary btn-sm"
+                        aria-label="Post comment"
+                        disabled={!commentDrafts[Number(item.id)]?.trim() || submittingCommentFor === Number(item.id)}
+                      >
+                        <Send size={14} aria-hidden="true" />
+                      </button>
+                    </form>
+                  )}
+                  {commentFeedback[Number(item.id)] && (
+                    <p className="notice notice-negative" role="alert" style={{ marginTop: '8px' }}>
+                      {commentFeedback[Number(item.id)]}
+                    </p>
+                  )}
+                </section>
               </article>
             ))}
           </div>
@@ -949,7 +1339,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                         ))}
                         <td className="num" style={{ fontWeight: 600 }}>{total}</td>
                         <td>
-                          {myRecord.attPct >= ATTENDANCE_MINIMUM ? (
+                          {attendancePercent !== null && attendancePercent >= ATTENDANCE_MINIMUM ? (
                             <span className="pill pill-positive">Requirement met</span>
                           ) : (
                             <span className="muted">{total >= 90 ? 'Exemplary' : 'On track'}</span>

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_current_user, require_roles
 from app.db.database import get_db_with_user_context
 from app.schemas.announcement import AnnouncementCreate, AnnouncementUpdate
-from app.schemas.announcement_comment import AnnouncementCommentCreate
+from app.schemas.announcement_comment import AnnouncementCommentCreate, AnnouncementCommentUpdate
 from app.services.announcement_comment_service import AnnouncementCommentService
 from app.services.announcement_service import AnnouncementService
 
@@ -31,6 +31,25 @@ async def create_announcement_comment(
 ):
     return {
         "data": await AnnouncementCommentService.create_comment(
+            announcement_id,
+            payload,
+            user,
+            session,
+        )
+    }
+
+
+@comments_router.patch("/{announcement_id}/comments/{comment_id}")
+async def update_announcement_comment(
+    announcement_id: int,
+    comment_id: int,
+    payload: AnnouncementCommentUpdate,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {
+        "data": await AnnouncementCommentService.update_comment(
+            comment_id,
             announcement_id,
             payload,
             user,

@@ -12,3 +12,7 @@ class AnnouncementCommentCreate(BaseModel):
         if not value.strip():
             raise ValueError("Comment cannot be blank")
         return value
+
+
+class AnnouncementCommentUpdate(AnnouncementCommentCreate):
+    pass

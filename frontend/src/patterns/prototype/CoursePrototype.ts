@@ -50,6 +50,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
   public createdAt: string;
   public enrolledStudents: EnrolledStudent[];
   public courseId?: number;
+  public instructorEmail?: string;
 
   constructor(
     code: string,
@@ -66,7 +67,8 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     tags: string[] = [],
     createdAt?: string,
     enrolledStudents: EnrolledStudent[] = [],
-    courseId?: number
+    courseId?: number,
+    instructorEmail?: string
   ) {
     this.code = code;
     this.title = title;
@@ -83,6 +85,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
     this.createdAt = createdAt || new Date().toISOString();
     this.enrolledStudents = enrolledStudents;
     this.courseId = courseId;
+    this.instructorEmail = instructorEmail;
   }
 
   /**
@@ -117,6 +120,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
       [...this.tags],
       new Date().toISOString(),
       [], // Reset enrolled students roster
+      undefined,
       this.instructorEmail
     );
   }

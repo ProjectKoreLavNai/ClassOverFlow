@@ -309,6 +309,33 @@ CREATE POLICY comments_insert_policy ON announcement_comments FOR INSERT
         )
     );
 
+DROP POLICY IF EXISTS comments_update_policy ON announcement_comments;
+CREATE POLICY comments_update_policy ON announcement_comments FOR UPDATE
+    USING (
+        current_app_user_role() <> 'ADMIN'
+        AND user_id = current_app_user_id()
+        AND EXISTS (
+            SELECT 1 FROM public.announcements a
+            WHERE a.announcement_id = announcement_comments.announcement_id
+              AND (
+                  public.app_current_user_teaches_course(a.course_id)
+                  OR public.app_current_user_enrolled_in_course(a.course_id)
+              )
+        )
+    )
+    WITH CHECK (
+        current_app_user_role() <> 'ADMIN'
+        AND user_id = current_app_user_id()
+        AND EXISTS (
+            SELECT 1 FROM public.announcements a
+            WHERE a.announcement_id = announcement_comments.announcement_id
+              AND (
+                  public.app_current_user_teaches_course(a.course_id)
+                  OR public.app_current_user_enrolled_in_course(a.course_id)
+              )
+        )
+    );
+
 DROP POLICY IF EXISTS comments_delete_policy ON announcement_comments;
 CREATE POLICY comments_delete_policy ON announcement_comments FOR DELETE
     USING (
