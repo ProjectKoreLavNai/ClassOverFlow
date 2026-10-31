@@ -176,12 +176,12 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
       setActiveDistribution(stored);
       api.getMarksDistribution(course.courseId)
         .then((items) => {
-          if (items && items.length > 0) {
-            setActiveDistribution(items);
-            storeMarksDistribution(course.courseId!, items);
-          }
+          setActiveDistribution(items);
+          storeMarksDistribution(course.courseId!, items);
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          setGradebookFeedback(error instanceof Error ? error.message : 'Unable to load marks distribution');
+        });
     }
   }, [course.courseId]);
 

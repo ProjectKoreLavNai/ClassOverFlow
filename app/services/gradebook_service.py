@@ -77,6 +77,36 @@ class GradebookService:
         return await GradebookRepository(session).get_gradebook(course_id, user)
 
     @staticmethod
+    async def get_marks_distribution(
+        course_id: int,
+        user: dict,
+        session: AsyncSession | None,
+    ) -> list[dict]:
+        GradebookService._require_database(session)
+        if user["role"] not in ("teacher", "student", "cr"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Marks distribution access required",
+            )
+        await CourseService.require_course_access(course_id, user, session)
+        try:
+            return await GradebookRepository(session).get_marks_distribution(course_id)
+        except LookupError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    @staticmethod
+    async def save_marks_distribution(
+        course_id: int,
+        items: list[dict],
+        user: dict,
+        session: AsyncSession | None,
+    ) -> list[dict]:
+        repository = await GradebookService._get_owned_repository(course_id, user, session)
+        result = await repository.save_marks_distribution(course_id, items)
+        await session.commit()
+        return result
+
+    @staticmethod
     async def save_attendance(
         course_id: int,
         payload,

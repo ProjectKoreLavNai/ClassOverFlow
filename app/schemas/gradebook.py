@@ -36,6 +36,24 @@ class GradebookSave(BaseModel):
     delete_mark_ids: list[int] = Field(default_factory=list)
 
 
+class MarksDistributionItem(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    total_marks: Decimal = Field(gt=0, le=100, max_digits=7, decimal_places=2)
+
+
+class MarksDistributionSave(BaseModel):
+    items: list[MarksDistributionItem] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def unique_category_names(self) -> "MarksDistributionSave":
+        names = [item.name.strip().casefold() for item in self.items]
+        if any(not name for name in names):
+            raise ValueError("Assessment category name cannot be empty")
+        if len(names) != len(set(names)):
+            raise ValueError("Assessment category names must be unique")
+        return self
+
+
 class MarkCreate(BaseModel):
     student_id: int = Field(gt=0)
     assessment_name: str = Field(min_length=1, max_length=150)
@@ -58,4 +76,3 @@ class MarkUpdate(BaseModel):
         if self.marks_obtained > self.total_marks:
             raise ValueError("marks_obtained cannot exceed total_marks")
         return self
-

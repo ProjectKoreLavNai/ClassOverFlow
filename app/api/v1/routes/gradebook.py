@@ -3,7 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.db.database import get_db_with_user_context
-from app.schemas.gradebook import AttendanceSave, GradebookSave, MarkCreate, MarkUpdate
+from app.schemas.gradebook import (
+    AttendanceSave,
+    GradebookSave,
+    MarkCreate,
+    MarksDistributionSave,
+    MarkUpdate,
+)
 from app.services.gradebook_service import GradebookService
 
 router = APIRouter(prefix="/api/v1/courses", tags=["Gradebook"])
@@ -16,6 +22,34 @@ async def get_gradebook(
     session: AsyncSession | None = Depends(get_db_with_user_context),
 ):
     return {"data": await GradebookService.get(course_id, user, session)}
+
+
+@router.get("/{course_id}/marks-distribution")
+async def get_marks_distribution(
+    course_id: int,
+    user: dict = Depends(get_current_user),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {
+        "data": await GradebookService.get_marks_distribution(course_id, user, session)
+    }
+
+
+@router.put("/{course_id}/marks-distribution")
+async def save_marks_distribution(
+    course_id: int,
+    payload: MarksDistributionSave,
+    user: dict = Depends(require_roles("teacher")),
+    session: AsyncSession | None = Depends(get_db_with_user_context),
+):
+    return {
+        "data": await GradebookService.save_marks_distribution(
+            course_id,
+            [item.model_dump() for item in payload.items],
+            user,
+            session,
+        )
+    }
 
 
 @router.put("/{course_id}/attendance")

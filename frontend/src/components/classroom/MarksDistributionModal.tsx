@@ -154,17 +154,9 @@ export const MarksDistributionModal: React.FC<Props> = ({
 
     setIsSaving(true);
     try {
-      // 1. Always persist to localStorage for instant local availability
+      const savedItems = await api.saveMarksDistribution(courseId, cleanItems);
       storeMarksDistribution(courseId, cleanItems);
-
-      // 2. Also try backend API if available
-      try {
-        await api.saveMarksDistribution(courseId, cleanItems);
-      } catch {
-        // Backend endpoint might not exist yet; client-side persistence remains active
-      }
-
-      onSaved(cleanItems);
+      onSaved(savedItems);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save marks distribution');
@@ -285,6 +277,7 @@ export const MarksDistributionModal: React.FC<Props> = ({
                     type="text"
                     value={item.name}
                     placeholder="Assessment name (e.g. CT, Final)"
+                    maxLength={150}
                     onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                     aria-label={`Assessment name ${index + 1}`}
                     required

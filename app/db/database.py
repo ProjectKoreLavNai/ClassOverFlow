@@ -46,11 +46,14 @@ async def check_database_connection() -> None:
                 "AND to_regprocedure('public.app_current_user_enrolled_in_course(integer)') IS NOT NULL "
                 "AND to_regprocedure('public.current_app_user_id()') IS NOT NULL "
                 "AND to_regprocedure('public.current_app_user_role()') IS NOT NULL "
-                "AND to_regclass('public.token_revocations') IS NOT NULL"
+                "AND to_regclass('public.token_revocations') IS NOT NULL "
+                "AND EXISTS (SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'courses' "
+                "AND column_name = 'marks_distribution')"
             )
         )
         if not result.scalar_one():
             raise RuntimeError(
-                "Required database functions or tables are missing; apply the supplied security SQL "
-                "and all application database migrations"
+                "Required database functions, tables, or columns are missing; apply the supplied "
+                "security SQL and all application database migrations"
             )

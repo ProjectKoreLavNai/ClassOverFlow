@@ -65,6 +65,13 @@ CREATE TABLE courses (
     class_code_hash VARCHAR(255) NOT NULL UNIQUE CHECK (char_length(class_code_hash) >= 50),
     description TEXT,
     syllabus TEXT,
+    marks_distribution JSONB NOT NULL DEFAULT '[
+        {"name": "Attendance", "total_marks": 5},
+        {"name": "Assignment/presentation", "total_marks": 5},
+        {"name": "CT", "total_marks": 10},
+        {"name": "Mid term", "total_marks": 20},
+        {"name": "Final", "total_marks": 60}
+    ]'::jsonb CHECK (jsonb_typeof(marks_distribution) = 'array'),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

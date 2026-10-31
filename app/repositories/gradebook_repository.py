@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 from decimal import Decimal
 
@@ -10,6 +11,52 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class GradebookRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    async def get_marks_distribution(self, course_id: int) -> list[dict]:
+        result = await self.session.execute(
+            text(
+                "SELECT marks_distribution FROM public.courses "
+                "WHERE course_id = :course_id"
+            ),
+            {"course_id": course_id},
+        )
+        distribution = result.scalar_one_or_none()
+        if distribution is None:
+            raise LookupError("Course not found")
+        return json.loads(distribution) if isinstance(distribution, str) else distribution
+
+    async def save_marks_distribution(
+        self,
+        course_id: int,
+        items: list[dict],
+    ) -> list[dict]:
+        distribution = [
+            {"name": item["name"].strip(), "total_marks": item["total_marks"]}
+            for item in items
+        ]
+        result = await self.session.execute(
+            text(
+                "UPDATE public.courses SET marks_distribution = CAST(:distribution AS jsonb) "
+                "WHERE course_id = :course_id RETURNING marks_distribution"
+            ),
+            {
+                "course_id": course_id,
+                "distribution": json.dumps(
+                    [
+                        {**item, "total_marks": float(item["total_marks"])}
+                        for item in distribution
+                    ]
+                ),
+            },
+        )
+        saved_distribution = result.scalar_one_or_none()
+        if saved_distribution is None:
+            raise LookupError("Course not found")
+        return (
+            json.loads(saved_distribution)
+            if isinstance(saved_distribution, str)
+            else saved_distribution
+        )
 
     async def get_gradebook(self, course_id: int, user: dict) -> dict:
         is_learner = user["role"] in ("student", "cr")
