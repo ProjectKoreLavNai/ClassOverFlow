@@ -2,12 +2,20 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Copy, Check, ExternalLink,
   CheckCircle2, Circle,
-  Send, UserPlus, Lock, Pencil, Trash2
+  Send, UserPlus, Lock, Pencil, Trash2,
+  Sliders
 } from 'lucide-react';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import type { CourseAnnouncement } from '../../patterns/facade/ClassroomAcademicFacade';
 import { JoinCourseModal } from './JoinCourseModal';
+import {
+  MarksDistributionModal,
+  type MarksDistributionItem,
+  getStoredMarksDistribution,
+  storeMarksDistribution,
+  DEFAULT_MARKS_DISTRIBUTION,
+} from './MarksDistributionModal';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { getCourseTheme, getInitials, getPersonTint } from '../../utils/courseTheme';
@@ -66,6 +74,10 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const [markDrafts, setMarkDrafts] = useState<Record<string, string>>({});
   const [isSavingGradebook, setIsSavingGradebook] = useState(false);
   const [gradebookFeedback, setGradebookFeedback] = useState<string | null>(null);
+  const [isDistributionModalOpen, setIsDistributionModalOpen] = useState(false);
+  const [activeDistribution, setActiveDistribution] = useState<MarksDistributionItem[]>(() =>
+    course.courseId ? getStoredMarksDistribution(course.courseId) : DEFAULT_MARKS_DISTRIBUTION
+  );
 
   // Composer state
   const [isComposerExpanded, setIsComposerExpanded] = useState(false);
@@ -159,6 +171,18 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
   useEffect(() => {
     void refreshCourseData();
+    if (course.courseId) {
+      const stored = getStoredMarksDistribution(course.courseId);
+      setActiveDistribution(stored);
+      api.getMarksDistribution(course.courseId)
+        .then((items) => {
+          if (items && items.length > 0) {
+            setActiveDistribution(items);
+            storeMarksDistribution(course.courseId!, items);
+          }
+        })
+        .catch(() => {});
+    }
   }, [course.courseId]);
 
   useEffect(() => {
@@ -186,6 +210,26 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
     marks.find((mark) => mark.assessment_name.toLowerCase() === name.toLowerCase());
   const getMarkValue = (studentId: number, name: string, mark?: BackendMark) =>
     markDrafts[`${studentId}:${name}`] ?? (mark ? String(mark.marks_obtained) : '');
+
+  // Check constraint helper: Validate against negative marks and exceeding constrained bounds
+  const getMarkValidationError = (value: string, max: number): string | null => {
+    if (!value || value.trim() === '') return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 'Invalid number';
+    if (num < 0) return 'Cannot be negative';
+    if (num > max) return `Exceeds max (${max})`;
+    return null;
+  };
+
+  const hasInvalidMarks = Object.entries(markDrafts).some(([key, val]) => {
+    if (!val || val.trim() === '') return false;
+    const parts = key.split(':');
+    const assessmentName = parts.slice(1).join(':');
+    const dist = activeDistribution.find((d) => d.name.toLowerCase() === assessmentName.toLowerCase());
+    const max = dist ? dist.total_marks : 100;
+    const num = Number(val);
+    return !Number.isFinite(num) || num < 0 || num > max;
+  });
 
   // AI insights card state in gradebook
   const [showAIInsights, setShowAIInsights] = useState(false);
@@ -506,11 +550,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
       }> = [];
       const deleteMarkIds: number[] = [];
       for (const student of gradebook.students) {
-        for (const assessment of [
-          { name: 'Assignment', total: 30 },
-          { name: 'Quiz', total: 20 },
-          { name: 'Midterm', total: 50 },
-        ]) {
+        for (const assessment of activeDistribution) {
           const mark = getStudentMark(student.marks, assessment.name);
           const draft = markDrafts[`${student.student_id}:${assessment.name}`];
           if (draft === undefined) continue;
@@ -519,16 +559,22 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             continue;
           }
           const obtained = Number(draft);
-          if (!Number.isFinite(obtained) || obtained < 0 || obtained > assessment.total) {
-            throw new Error(`${assessment.name} marks must be between 0 and ${assessment.total}`);
+          if (!Number.isFinite(obtained)) {
+            throw new Error(`Invalid mark for ${assessment.name}`);
           }
-          if (!mark || Number(mark.marks_obtained) !== obtained || Number(mark.total_marks) !== assessment.total) {
+          if (obtained < 0) {
+            throw new Error(`Check constraint violation: ${assessment.name} marks cannot be negative.`);
+          }
+          if (obtained > assessment.total_marks) {
+            throw new Error(`Check constraint violation: ${assessment.name} mark (${obtained}) cannot exceed constrained maximum of ${assessment.total_marks}.`);
+          }
+          if (!mark || Number(mark.marks_obtained) !== obtained || Number(mark.total_marks) !== assessment.total_marks) {
             marksToSave.push({
               ...(mark ? { mark_id: mark.mark_id } : {}),
               student_id: student.student_id,
               assessment_name: assessment.name,
               marks_obtained: obtained,
-              total_marks: assessment.total,
+              total_marks: assessment.total_marks,
             });
           }
         }
@@ -1223,6 +1269,15 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
               </button>
               {session?.canEditGrades() && (
                 <>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setIsDistributionModalOpen(true)}
+                    title="Configure marks distribution for this course"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Sliders size={14} />
+                    Distribution
+                  </button>
                   <input
                     className="input"
                     type="date"
@@ -1230,7 +1285,12 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                     onChange={(event) => setAttendanceDate(event.target.value)}
                     aria-label="Attendance session date"
                   />
-                  <button className="btn btn-primary btn-sm" onClick={() => void handleSaveGradebook()} disabled={isSavingGradebook || !gradebook}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => void handleSaveGradebook()}
+                    disabled={isSavingGradebook || !gradebook || hasInvalidMarks}
+                    title={hasInvalidMarks ? 'Cannot save: some marks violate constraints' : undefined}
+                  >
                     {isSavingGradebook ? 'Saving…' : 'Save changes'}
                   </button>
                 </>
@@ -1239,6 +1299,11 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           </div>
           {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
           {gradebookFeedback && <p className="notice" role="status">{gradebookFeedback}</p>}
+          {hasInvalidMarks && (
+            <p className="notice notice-negative" role="alert" style={{ marginBottom: '10px' }}>
+              <strong>Constraint error:</strong> One or more marks are negative or exceed the configured maximum. Please fix invalid inputs before saving.
+            </p>
+          )}
 
           {/* AI summary, built from the same rows as the table */}
           {showAIInsights && (
@@ -1255,106 +1320,169 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             </section>
           )}
 
-          <div className="panel" style={{ paddingTop: '8px', paddingBottom: '8px' }}>
-            <div className="table-wrap">
-              <table className="table" style={{ minWidth: '760px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: '48px' }}>Roll</th>
-                    <th>Student</th>
-                    <th className="num">Attendance <span className="muted">(min {ATTENDANCE_MINIMUM}%)</span></th>
-                    <th className="num">Assignment /30</th>
-                    <th className="num">Quiz /20</th>
-                    <th className="num">Midterm /50</th>
-                    <th className="num">Total /100</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(gradebook?.students || []).map((student) => {
-                    const attendancePercent = student.attendance_percent;
-                    const isShort = attendancePercent !== null && attendancePercent < ATTENDANCE_MINIMUM;
-                    const assignmentMark = getStudentMark(student.marks, 'Assignment');
-                    const quizMark = getStudentMark(student.marks, 'Quiz');
-                    const midtermMark = getStudentMark(student.marks, 'Midterm');
-                    const total = Number(assignmentMark?.marks_obtained || 0)
-                      + Number(quizMark?.marks_obtained || 0)
-                      + Number(midtermMark?.marks_obtained || 0);
-                    return (
-                      <tr key={student.student_id}>
-                        <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{student.student_id}</td>
-                        <td>
-                          <span style={{ fontWeight: 500 }}>{student.full_name}</span>
-                          <span className="cell-sub">{student.username}</span>
-                        </td>
-                        <td className="num">
-                          <div className="attend" title={`${student.attended} of ${gradebook?.classes_held ?? 0} classes`}>
-                            <span className="attend-track" aria-hidden="true">
-                              <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${attendancePercent ?? 0}%` }} />
-                              <span className="attend-min" style={{ left: `${ATTENDANCE_MINIMUM}%` }} />
+          {(() => {
+            const attDist = activeDistribution.find((d) => d.name.toLowerCase() === 'attendance');
+            const nonAttDistribution = activeDistribution.filter((d) => d.name.toLowerCase() !== 'attendance');
+            const distributionSum = activeDistribution.reduce((acc, item) => acc + item.total_marks, 0);
+
+            return (
+              <div className="panel" style={{ paddingTop: '8px', paddingBottom: '8px' }}>
+                <div className="table-wrap">
+                  <table className="table" style={{ minWidth: '780px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '48px' }}>Roll</th>
+                        <th>Student</th>
+                        <th className="num">
+                          Attendance{' '}
+                          <span className="muted" style={{ fontWeight: 400 }}>
+                            (min {ATTENDANCE_MINIMUM}%{attDist ? ` · /${attDist.total_marks}m` : ''})
+                          </span>
+                        </th>
+                        {nonAttDistribution.map((item) => (
+                          <th className="num" key={item.name}>
+                            {item.name}{' '}
+                            <span className="muted" style={{ fontWeight: 400 }}>
+                              /{item.total_marks}
                             </span>
-                            <span className="attend-value" style={{ color: isShort ? 'var(--negative)' : undefined }}>
-                              {attendancePercent === null ? '–' : pct1(attendancePercent)}
-                            </span>
-                          </div>
-                          {session?.canEditGrades() ? (
-                            <select
-                              className="select"
-                              value={attendanceStatuses[student.student_id] || 'ABSENT'}
-                              onChange={(event) => setAttendanceStatuses((current) => ({
-                                ...current,
-                                [student.student_id]: event.target.value as 'PRESENT' | 'ABSENT',
-                              }))}
-                              aria-label={`Attendance status for ${student.full_name}`}
-                            >
-                              <option value="PRESENT">Present</option>
-                              <option value="ABSENT">Absent</option>
-                            </select>
-                          ) : (
-                            <span className="cell-sub">{student.attended} of {gradebook?.classes_held ?? 0}</span>
-                          )}
-                        </td>
-                        {[
-                          { name: 'Assignment', total: 30, mark: assignmentMark },
-                          { name: 'Quiz', total: 20, mark: quizMark },
-                          { name: 'Midterm', total: 50, mark: midtermMark },
-                        ].map(({ name, total: maximum, mark }) => (
-                          <td className="num" key={name}>
-                            {session?.canEditGrades() ? (
-                              <input
-                                className="input"
-                                type="number"
-                                min="0"
-                                max={maximum}
-                                step="0.01"
-                                value={getMarkValue(student.student_id, name, mark)}
-                                onChange={(event) => setMarkDrafts((current) => ({
-                                  ...current,
-                                  [`${student.student_id}:${name}`]: event.target.value,
-                                }))}
-                                aria-label={`${name} marks for ${student.full_name}`}
-                              />
-                            ) : mark ? `${mark.marks_obtained}/${mark.total_marks}` : '–'}
-                          </td>
+                          </th>
                         ))}
-                        <td className="num" style={{ fontWeight: 600 }}>{total}</td>
-                        <td>
-                          {attendancePercent !== null && attendancePercent >= ATTENDANCE_MINIMUM ? (
-                            <span className="pill pill-positive">Requirement met</span>
-                          ) : (
-                            <span className="muted">{total >= 90 ? 'Exemplary' : 'On track'}</span>
-                          )}
-                        </td>
+                        <th className="num">Total /{distributionSum}</th>
+                        <th>Status</th>
                       </tr>
-                    );
-                  })}
-                  {gradebook?.students.length === 0 && (
-                    <tr><td colSpan={8} className="muted">No students are enrolled in this course.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    </thead>
+                    <tbody>
+                      {(gradebook?.students || []).map((student) => {
+                        const attendancePercent = student.attendance_percent;
+                        const isShort = attendancePercent !== null && attendancePercent < ATTENDANCE_MINIMUM;
+                        const compAtt = attDist && (gradebook?.classes_held ?? 0) > 0 && attendancePercent !== null
+                          ? Math.round(((attendancePercent / 100) * attDist.total_marks) * 10) / 10
+                          : 0;
+
+                        let rowTotal = 0;
+                        if (attDist) {
+                          const attMark = getStudentMark(student.marks, attDist.name);
+                          const attDraft = markDrafts[`${student.student_id}:${attDist.name}`];
+                          if (attDraft !== undefined && attDraft.trim() !== '') {
+                            rowTotal += Number(attDraft) || 0;
+                          } else if (attMark) {
+                            rowTotal += Number(attMark.marks_obtained) || 0;
+                          } else {
+                            rowTotal += compAtt;
+                          }
+                        }
+
+                        nonAttDistribution.forEach((dist) => {
+                          const draft = markDrafts[`${student.student_id}:${dist.name}`];
+                          const mark = getStudentMark(student.marks, dist.name);
+                          if (draft !== undefined && draft.trim() !== '') {
+                            rowTotal += Number(draft) || 0;
+                          } else if (mark) {
+                            rowTotal += Number(mark.marks_obtained) || 0;
+                          }
+                        });
+
+                        return (
+                          <tr key={student.student_id}>
+                            <td className="muted" style={{ fontVariantNumeric: 'tabular-nums' }}>{student.student_id}</td>
+                            <td>
+                              <span style={{ fontWeight: 500 }}>{student.full_name}</span>
+                              <span className="cell-sub">{student.username}</span>
+                            </td>
+                            <td className="num">
+                              <div className="attend" title={`${student.attended} of ${gradebook?.classes_held ?? 0} classes`}>
+                                <span className="attend-track" aria-hidden="true">
+                                  <span className={`attend-fill${isShort ? ' is-short' : ''}`} style={{ width: `${attendancePercent ?? 0}%` }} />
+                                  <span className="attend-min" style={{ left: `${ATTENDANCE_MINIMUM}%` }} />
+                                </span>
+                                <span className="attend-value" style={{ color: isShort ? 'var(--negative)' : undefined }}>
+                                  {attendancePercent === null ? '–' : pct1(attendancePercent)}
+                                </span>
+                              </div>
+                              {session?.canEditGrades() ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end' }}>
+                                  <select
+                                    className="select"
+                                    value={attendanceStatuses[student.student_id] || 'ABSENT'}
+                                    onChange={(event) => setAttendanceStatuses((current) => ({
+                                      ...current,
+                                      [student.student_id]: event.target.value as 'PRESENT' | 'ABSENT',
+                                    }))}
+                                    aria-label={`Attendance status for ${student.full_name}`}
+                                  >
+                                    <option value="PRESENT">Present</option>
+                                    <option value="ABSENT">Absent</option>
+                                  </select>
+                                  {attDist && (
+                                    <span className="cell-sub" title="Calculated attendance mark">
+                                      {compAtt}/{attDist.total_marks}m
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="cell-sub">
+                                  {student.attended} of {gradebook?.classes_held ?? 0}
+                                  {attDist ? ` (${compAtt}/${attDist.total_marks}m)` : ''}
+                                </span>
+                              )}
+                            </td>
+                            {nonAttDistribution.map((item) => {
+                              const mark = getStudentMark(student.marks, item.name);
+                              const rawVal = getMarkValue(student.student_id, item.name, mark);
+                              const draftVal = markDrafts[`${student.student_id}:${item.name}`];
+                              const valErr = draftVal !== undefined ? getMarkValidationError(draftVal, item.total_marks) : null;
+
+                              return (
+                                <td className="num" key={item.name}>
+                                  {session?.canEditGrades() ? (
+                                    <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                                      <input
+                                        className={`input${valErr ? ' is-invalid' : ''}`}
+                                        type="number"
+                                        min="0"
+                                        max={item.total_marks}
+                                        step="0.01"
+                                        value={rawVal}
+                                        style={valErr ? { borderColor: 'var(--negative)', backgroundColor: 'var(--pill-negative-bg)' } : undefined}
+                                        onChange={(event) => setMarkDrafts((current) => ({
+                                          ...current,
+                                          [`${student.student_id}:${item.name}`]: event.target.value,
+                                        }))}
+                                        aria-label={`${item.name} marks for ${student.full_name}`}
+                                        title={valErr || `Constrained max: ${item.total_marks}`}
+                                      />
+                                      {valErr && (
+                                        <span style={{ fontSize: '0.68rem', color: 'var(--negative)', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                                          {valErr}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : mark ? `${mark.marks_obtained}/${mark.total_marks}` : '–'}
+                                </td>
+                              );
+                            })}
+                            <td className="num" style={{ fontWeight: 600 }}>{rowTotal.toFixed(1)}</td>
+                            <td>
+                              {attendancePercent !== null && attendancePercent >= ATTENDANCE_MINIMUM ? (
+                                <span className="pill pill-positive">Requirement met</span>
+                              ) : isShort ? (
+                                <span className="pill pill-negative">Attendance risk</span>
+                              ) : (
+                                <span className="muted">{rowTotal >= (distributionSum * 0.8) ? 'Exemplary' : 'On track'}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {gradebook?.students.length === 0 && (
+                        <tr><td colSpan={5 + nonAttDistribution.length} className="muted">No students are enrolled in this course.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1644,6 +1772,20 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           onCourseUpdated(joinedCourse);
         }}
       />
+
+      {/* Marks Distribution Configuration Modal (for teachers) */}
+      {session?.canEditGrades() && course.courseId && (
+        <MarksDistributionModal
+          isOpen={isDistributionModalOpen}
+          onClose={() => setIsDistributionModalOpen(false)}
+          courseId={course.courseId}
+          initialDistribution={activeDistribution}
+          onSaved={(newDist) => {
+            setActiveDistribution(newDist);
+            setGradebookFeedback('Marks distribution updated successfully.');
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -449,6 +449,30 @@ class ApiClient {
     return res.data;
   }
 
+  public async getMarksDistribution(
+    courseId: number
+  ): Promise<Array<{ name: string; total_marks: number }>> {
+    const res = await this.request<{ data: Array<{ name: string; total_marks: number }> }>(
+      `/api/v1/courses/${courseId}/marks-distribution`
+    );
+    return res.data;
+  }
+
+  public async saveMarksDistribution(
+    courseId: number,
+    items: Array<{ name: string; total_marks: number }>
+  ): Promise<Array<{ name: string; total_marks: number }>> {
+    const res = await this.request<{ data: Array<{ name: string; total_marks: number }> }>(
+      `/api/v1/courses/${courseId}/marks-distribution`,
+      {
+        method: 'PUT',
+        body: JSON.stringify({ items }),
+      }
+    );
+    return res.data;
+  }
+
+
   // --- Announcements ---
   public async listAnnouncements(courseId: number): Promise<BackendAnnouncement[]> {
     const res = await this.request<{ data: BackendAnnouncement[] }>(`/api/v1/courses/${courseId}/announcements`);
