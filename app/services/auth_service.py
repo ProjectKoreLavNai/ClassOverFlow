@@ -16,7 +16,12 @@ from app.core.security import (
 )
 from app.repositories.in_memory_store import InMemoryStore
 from app.repositories.user_repository import UserRepository
-from app.schemas.auth import UserLogin, UserRegister
+from app.schemas.auth import (
+    ResetPasswordRequest,
+    UserLogin,
+    UserRegister,
+    VerifyResetEmailRequest,
+)
 
 
 class AuthService:
@@ -338,3 +343,67 @@ class AuthService:
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Persistent administrator storage is unavailable",
             )
+
+    @staticmethod
+    async def verify_reset_email(email: str, session: AsyncSession | None = None) -> dict:
+        clean_email = str(email).strip().casefold()
+        if session is not None:
+            user = await UserRepository(session).authenticate(clean_email)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No account found with this email address.",
+                )
+            return {
+                "email": clean_email,
+                "full_name": user.get("full_name") or user.get("username", ""),
+                "role": user.get("role", "").lower(),
+                "exists": True,
+            }
+
+        user = InMemoryStore.users.get(clean_email)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account found with this email address.",
+            )
+        return {
+            "email": clean_email,
+            "full_name": user.get("full_name") or user.get("username", ""),
+            "role": user.get("role", "").lower(),
+            "exists": True,
+        }
+
+    @staticmethod
+    async def reset_password(
+        payload: ResetPasswordRequest, session: AsyncSession | None = None
+    ) -> dict:
+        clean_email = str(payload.email).strip().casefold()
+        hashed = hash_password(payload.new_password)
+
+        if session is not None:
+            user = await UserRepository(session).authenticate(clean_email)
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No account found with this email address.",
+                )
+            await UserRepository(session).reset_password(clean_email, hashed)
+            if clean_email in InMemoryStore.users:
+                InMemoryStore.users[clean_email]["password"] = hashed
+            return {
+                "email": clean_email,
+                "message": "Password reset successfully. You can now log in.",
+            }
+
+        if clean_email not in InMemoryStore.users:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No account found with this email address.",
+            )
+        InMemoryStore.users[clean_email]["password"] = hashed
+        return {
+            "email": clean_email,
+            "message": "Password reset successfully. You can now log in.",
+        }
+

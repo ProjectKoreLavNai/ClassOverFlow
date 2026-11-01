@@ -291,3 +291,43 @@ class UserRepository:
             {"user_id": user_id},
         )
         return True
+
+    async def reset_password(self, email: str, new_password_hash: str) -> bool:
+        clean_email = email.strip().lower()
+        auth_user = await self.authenticate(clean_email)
+        if not auth_user:
+            return False
+        user_id = auth_user["user_id"]
+        role = auth_user["role"].upper()
+
+        if role in ("STUDENT", "CR"):
+            await self.session.execute(
+                text("UPDATE public.students SET password_hash = :hash WHERE student_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+        elif role == "TEACHER":
+            await self.session.execute(
+                text("UPDATE public.teachers SET password_hash = :hash WHERE teacher_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+        elif role == "ADMIN":
+            await self.session.execute(
+                text("UPDATE public.admins SET password_hash = :hash WHERE admin_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+        else:
+            await self.session.execute(
+                text("UPDATE public.students SET password_hash = :hash WHERE student_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+            await self.session.execute(
+                text("UPDATE public.teachers SET password_hash = :hash WHERE teacher_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+            await self.session.execute(
+                text("UPDATE public.admins SET password_hash = :hash WHERE admin_id = :user_id"),
+                {"hash": new_password_hash, "user_id": user_id},
+            )
+        await self.session.commit()
+        return True
+

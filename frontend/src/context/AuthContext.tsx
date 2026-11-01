@@ -26,6 +26,8 @@ interface AuthContextValue {
   verifyUser: (email: string) => boolean;
   updateUserRole: (email: string, newRole: AcademicRole) => boolean;
   deleteUser: (email: string) => boolean;
+  verifyResetEmail: (email: string) => Promise<{ success: boolean; email?: string; fullName?: string; message?: string }>;
+  resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
   setViolation: (check: SecurityCheckResult) => void;
   clearViolation: () => void;
 }
@@ -123,6 +125,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearViolation = () => setSecurityViolation(null);
 
+  const verifyResetEmail = async (email: string) => {
+    return authManager.verifyResetEmail(email);
+  };
+
+  const resetPassword = async (email: string, newPassword: string) => {
+    return authManager.resetPassword(email, newPassword);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -139,6 +149,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         verifyUser,
         updateUserRole,
         deleteUser,
+        verifyResetEmail,
+        resetPassword,
         setViolation,
         clearViolation
       }}

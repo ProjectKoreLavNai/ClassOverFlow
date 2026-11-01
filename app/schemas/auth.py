@@ -65,3 +65,33 @@ class AdminUserUpdate(BaseModel):
         if self.role is None and self.is_verified is None:
             raise ValueError("At least one field must be provided")
         return self
+
+
+class VerifyResetEmailRequest(BaseModel):
+    email: EmailStr = Field(..., max_length=150)
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr = Field(..., max_length=150)
+    new_password: str = Field(..., min_length=8, max_length=72)
+    confirm_password: str = Field(..., min_length=8, max_length=72)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_strength(cls, password: str) -> str:
+        if len(password.encode("utf-8")) > 72:
+            raise ValueError("Password cannot exceed 72 UTF-8 bytes")
+        if not (
+            any(character.islower() for character in password)
+            and any(character.isupper() for character in password)
+            and any(character.isdigit() for character in password)
+        ):
+            raise ValueError("Password must include lowercase, uppercase, and numeric characters")
+        return password
+
+    @model_validator(mode="after")
+    def passwords_match(self) -> "ResetPasswordRequest":
+        if self.new_password != self.confirm_password:
+            raise ValueError("Passwords do not match")
+        return self
+

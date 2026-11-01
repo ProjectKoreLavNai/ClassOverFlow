@@ -48,7 +48,8 @@ export const ClassroomsHome: React.FC<Props> = ({ selectedCode, onSelectCode }) 
 
   const [courses, setCourses] = useState<CourseBlueprint[]>(facade.getCourses());
   const [courseLoadError, setCourseLoadError] = useState<string | null>(null);
-  const refreshCourses = () => setCourses(facade.getCourses());
+  const [, setRenderTrigger] = useState(0);
+  const refreshCourses = () => setRenderTrigger((n) => n + 1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
   const [joinPrefillCode, setJoinPrefillCode] = useState('');

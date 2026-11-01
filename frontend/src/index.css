@@ -1431,6 +1431,66 @@ input, select, textarea {
   gap: 14px;
 }
 
+.demo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 0.74rem;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-family: var(--font-display);
+  font-weight: 500;
+}
+
+.demo-chip:hover {
+  background: var(--active);
+  border-color: var(--control);
+}
+
+.demo-chip[aria-pressed='true'] {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes authFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-fade-in {
+  animation: authFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-fade-in {
+    animation: none;
+  }
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
 @media (max-width: 900px) {
   .auth-card { grid-template-columns: minmax(0, 1fr); }
   .auth-card > div:first-child { padding: 24px 20px; }

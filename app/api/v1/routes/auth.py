@@ -4,7 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, require_roles
 from app.db.database import get_db, get_db_with_user_context
-from app.schemas.auth import AdminUserUpdate, RefreshRequest, UserLogin, UserRegister, UserUpdate
+from app.schemas.auth import (
+    AdminUserUpdate,
+    RefreshRequest,
+    ResetPasswordRequest,
+    UserLogin,
+    UserRegister,
+    UserUpdate,
+    VerifyResetEmailRequest,
+)
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
@@ -22,6 +30,20 @@ async def register(payload: UserRegister, session: AsyncSession | None = Depends
 async def login(payload: UserLogin, session: AsyncSession | None = Depends(get_db)):
     token_data = await AuthService.login(payload, session)
     return {"data": token_data}
+
+
+@router.post("/forgot-password/verify")
+async def verify_reset_email(
+    payload: VerifyResetEmailRequest, session: AsyncSession | None = Depends(get_db)
+):
+    return {"data": await AuthService.verify_reset_email(payload.email, session)}
+
+
+@router.post("/forgot-password/reset")
+async def reset_password(
+    payload: ResetPasswordRequest, session: AsyncSession | None = Depends(get_db)
+):
+    return {"data": await AuthService.reset_password(payload, session)}
 
 
 @router.post("/refresh")

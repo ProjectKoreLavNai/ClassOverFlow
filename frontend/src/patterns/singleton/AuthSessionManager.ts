@@ -503,6 +503,98 @@ export class AuthSessionManager {
     return false;
   }
 
+  /**
+   * Verify whether an email exists for password recovery
+   */
+  public async verifyResetEmail(email: string): Promise<{ success: boolean; email?: string; fullName?: string; message?: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, message: 'Please enter your university email.' };
+    }
+
+    try {
+      const data = await api.verifyResetEmail(cleanEmail);
+      if (data && data.exists) {
+        return {
+          success: true,
+          email: cleanEmail,
+          fullName: data.full_name,
+        };
+      }
+    } catch (err: any) {
+      console.warn('Backend verifyResetEmail failed, checking local store:', err?.message);
+    }
+
+    // Local fallback check
+    const user = this.users.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (user) {
+      return {
+        success: true,
+        email: cleanEmail,
+        fullName: user.fullName,
+      };
+    }
+
+    return {
+      success: false,
+      message: 'No registered account found with this email address.',
+    };
+  }
+
+  /**
+   * Reset Password without email verification token (Direct Reset)
+   */
+  public async resetPassword(
+    email: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    if (newPassword.length < 8) {
+      return {
+        success: false,
+        message: 'Password must be at least 8 characters long.',
+      };
+    }
+
+    let backendSuccess = false;
+    try {
+      const res = await api.resetPassword({
+        email: cleanEmail,
+        new_password: newPassword,
+        confirm_password: newPassword,
+      });
+      if (res && res.message) {
+        backendSuccess = true;
+      }
+    } catch (err: any) {
+      console.warn('Backend resetPassword failed or offline, updating locally:', err?.message);
+    }
+
+    // Update in local users store
+    const userIndex = this.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
+    if (userIndex !== -1) {
+      this.users[userIndex].password = newPassword;
+      this.saveUsersToStorage(this.users);
+      return {
+        success: true,
+        message: 'Password has been successfully updated. You can now log in.',
+      };
+    }
+
+    if (backendSuccess) {
+      return {
+        success: true,
+        message: 'Password has been successfully updated. You can now log in.',
+      };
+    }
+
+    return {
+      success: false,
+      message: 'Unable to update password. Please check your email and try again.',
+    };
+  }
+
   private generateInitials(name: string): string {
     const parts = (name || 'Academic User').trim().split(/\s+/);
     if (parts.length >= 2) {

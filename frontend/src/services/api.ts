@@ -265,6 +265,36 @@ class ApiClient {
     return res.data;
   }
 
+  public async verifyResetEmail(email: string): Promise<{ email: string; full_name: string; role: string; exists: boolean }> {
+    const res = await this.request<{ data: { email: string; full_name: string; role: string; exists: boolean } }>(
+      '/api/v1/auth/forgot-password/verify',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      }
+    );
+    return res.data;
+  }
+
+  public async resetPassword(payload: {
+    email: string;
+    new_password: string;
+    confirm_password: string;
+  }): Promise<{ email: string; message: string }> {
+    const res = await this.request<{ data: { email: string; message: string } }>(
+      '/api/v1/auth/forgot-password/reset',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          email: payload.email.trim().toLowerCase(),
+          new_password: payload.new_password,
+          confirm_password: payload.confirm_password,
+        }),
+      }
+    );
+    return res.data;
+  }
+
   public async updateProfile(payload: Partial<BackendUser>): Promise<BackendUser> {
     const res = await this.request<{ data: BackendUser }>('/api/v1/users/me', {
       method: 'PATCH',
