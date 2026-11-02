@@ -44,6 +44,7 @@ def main():
         "--host", "127.0.0.1",
         "--port", "8000",
         "--reload",
+        "--reload-dir", "app",
     ]
     print("[Backend] Starting FastAPI on http://127.0.0.1:8000 ...")
     backend_proc = subprocess.Popen(

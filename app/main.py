@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 import logging
 
@@ -16,17 +17,22 @@ from app.repositories.in_memory_store import InMemoryStore
 logger = logging.getLogger(__name__)
 
 
+async def _startup_db_check():
+    try:
+        await check_database_connection()
+        logger.info("Database connection and schema verification succeeded.")
+    except (OSError, SQLAlchemyError, RuntimeError) as exc:
+        logger.warning(
+            "Database startup check failed; API is starting in not-ready state: %s",
+            exc,
+        )
+        InMemoryStore.seed_defaults()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if settings.storage_backend == "database":
-        try:
-            await check_database_connection()
-        except (OSError, SQLAlchemyError, RuntimeError) as exc:
-            logger.warning(
-                "Database startup check failed; API is starting in not-ready state: %s",
-                exc,
-            )
-            InMemoryStore.seed_defaults()
+        asyncio.create_task(_startup_db_check())
     else:
         InMemoryStore.seed_defaults()
     yield

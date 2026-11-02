@@ -31,7 +31,6 @@ async def get_db_with_user_context(
 
 async def check_database_connection() -> None:
     async with engine.connect() as connection:
-        await connection.execute(text("SELECT 1"))
         result = await connection.execute(
             text(
                 "SELECT "
