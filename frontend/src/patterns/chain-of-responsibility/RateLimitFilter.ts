@@ -3,7 +3,9 @@ import type { FilterResult, SecurityRequest } from '../../types/auth';
 
 /**
  * Filter 1: Rate Limiting & Brute-Force Gate
- * Protects against automated bots and rapid credential stuffing.
+ * Usability guard only: it slows down repeated typos in this tab. It is NOT a
+ * security control, because anyone can bypass it by calling the API directly.
+ * The real limit is enforced by the backend (HTTP 429).
  */
 export class RateLimitFilter extends SecurityFilter {
   private failedAttempts: Record<string, { count: number; lockedUntil: number }> = {};
@@ -37,7 +39,8 @@ export class RateLimitFilter extends SecurityFilter {
       return {
         success: false,
         filterName: 'RateLimitFilter',
-        message: `Security Gate 1: Account temporarily locked due to repeated failed attempts. Please wait ${waitSeconds}s.`
+        message: `Too many failed attempts. Try again in ${waitSeconds}s.`,
+        retryAfter: waitSeconds
       };
     }
 

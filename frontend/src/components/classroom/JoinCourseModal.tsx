@@ -3,7 +3,13 @@ import { X, KeyRound, Check, AlertCircle, BookOpen, UserCheck, ArrowRight } from
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { useAuth } from '../../context/AuthContext';
-import api from '../../services/api';
+import api, { ApiError, isRateLimited } from '../../services/api';
+import { DEMO_ENABLED } from '../../config/demoAccounts';
+import { useRetryCountdown } from '../../utils/useRetryCountdown';
+
+// One message for every wrong, expired or unknown code, so the response never
+// tells a guesser which codes exist.
+const INVALID_CODE_MESSAGE = 'That class code didn’t work. Check it with your teacher and try again.';
 
 interface Props {
   isOpen: boolean;
@@ -18,6 +24,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success' | 'info'; message: string } | null>(null);
   const [matchedCourse, setMatchedCourse] = useState<CourseBlueprint | null>(null);
   const [isJoining, setIsJoining] = useState(false);
+  const retry = useRetryCountdown();
 
   const facade = ClassroomAcademicFacade.getInstance();
 
@@ -49,7 +56,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session) return;
+    if (!session || retry.isWaiting) return;
     setIsJoining(true);
     try {
       const result = await api.joinCourse(invitationId.trim());
@@ -65,22 +72,31 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
         onClose();
       }, 1200);
     } catch (error) {
-      setFeedback({
-        type: 'error',
-        message: error instanceof Error ? error.message : 'Unable to join course',
-      });
+      if (isRateLimited(error)) {
+        retry.start(error.retryAfter ?? 30);
+        setFeedback({ type: 'error', message: 'Too many tries. Wait for the timer on the button, then try again.' });
+      } else if (error instanceof ApiError && [400, 404, 410, 422].includes(error.status)) {
+        setFeedback({ type: 'error', message: INVALID_CODE_MESSAGE });
+      } else {
+        setFeedback({
+          type: 'error',
+          message: error instanceof Error ? error.message : 'Unable to join course',
+        });
+      }
     } finally {
       setIsJoining(false);
     }
   };
 
-  // Sample active courses for easy testing
-  const activeSampleCodes = [
-    { code: 'os50-cse3104', label: 'CSE-3104 (OS)' },
-    { code: 'ml78-cse3106', label: 'CSE-3106 (ML)' },
-    { code: 'c7x9-cse3102', label: 'CSE-3102 (Dev)' },
-    { code: 'd3b1-cse3101', label: 'CSE-3101 (DBMS)' }
-  ];
+  // Sample codes for local testing only; never shipped in production builds.
+  const activeSampleCodes = DEMO_ENABLED
+    ? [
+        { code: 'os50-cse3104', label: 'CSE-3104 (OS)' },
+        { code: 'ml78-cse3106', label: 'CSE-3106 (ML)' },
+        { code: 'c7x9-cse3102', label: 'CSE-3102 (Dev)' },
+        { code: 'd3b1-cse3101', label: 'CSE-3101 (DBMS)' }
+      ]
+    : [];
 
   return (
     <div
@@ -182,6 +198,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
         {/* Feedback Alert */}
         {feedback && (
           <div
+            role={feedback.type === 'error' ? 'alert' : 'status'}
             style={{
               padding: '0.85rem 1rem',
               borderRadius: '8px',
@@ -362,6 +379,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
           )}
 
           {/* Demo Invitation Codes Chip Quick-selector */}
+          {activeSampleCodes.length > 0 && (
           <div>
             <span
               style={{
@@ -372,7 +390,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
                 marginBottom: '0.45rem'
               }}
             >
-              Sample Invitation Codes:
+              Sample class codes (development build)
             </span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
               {activeSampleCodes.map((sample) => (
@@ -398,6 +416,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
               ))}
             </div>
           </div>
+          )}
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.75rem' }}>
@@ -412,7 +431,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={isJoining}
+              disabled={isJoining || retry.isWaiting}
               style={{
                 padding: '0.65rem 1.4rem',
                 display: 'flex',
@@ -420,8 +439,10 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
                 gap: '0.45rem'
               }}
             >
-              <span>{isJoining ? 'Joining…' : 'Join Course'}</span>
-              <ArrowRight size={16} />
+              <span>
+                {retry.isWaiting ? `Try again in ${retry.secondsLeft}s` : isJoining ? 'Joining…' : 'Join course'}
+              </span>
+              {!retry.isWaiting && <ArrowRight size={16} aria-hidden="true" />}
             </button>
           </div>
         </form>

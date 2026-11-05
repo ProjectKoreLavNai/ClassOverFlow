@@ -20,6 +20,8 @@ import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { getCourseTheme, getInitials, getPersonTint } from '../../utils/courseTheme';
 import api, {
+  ApiError,
+  type BackendAnnouncement,
   type BackendAssignment,
   type BackendComment,
   type BackendGradebook,
@@ -100,21 +102,17 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const isEnrolled = isLearner
     ? Boolean(course.courseId)
     : session ? facade.isStudentEnrolled(course.code, session.email) : false;
-  const canPostAnnouncement = Boolean(
-    session
-    && (session.role === 'teacher'
-      ? facade.isTeacherCreator(course, session) || facade.isStudentEnrolled(course.code, session.email)
-      : session.role === 'cr' && facade.isStudentEnrolled(course.code, session.email))
-  );
-  const canComment = Boolean(
-    session
-    && (isLearner
-      ? isEnrolled
-      : session.role === 'teacher' && facade.isTeacherCreator(course, session))
-  );
   const isCourseTeacher = Boolean(
     session?.role === 'teacher' && facade.isTeacherCreator(course, session)
   );
+  // Access-control matrix: only the course's assigned teacher creates, edits or deletes
+  // official announcements. Enrolled students and CRs read and comment; admins read only.
+  const canPostAnnouncement = isCourseTeacher;
+  const canComment = Boolean(
+    session
+    && (isLearner ? isEnrolled : isCourseTeacher)
+  );
+  const [announcementsError, setAnnouncementsError] = useState<string | null>(null);
   const isOwnComment = (comment: BackendComment) => Boolean(
     session && (
       session.email.trim().toLowerCase() === comment.author_email?.trim().toLowerCase()
@@ -124,9 +122,21 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
   const refreshCourseData = async () => {
     if (!course.courseId) return;
+    // Announcements load on their own, so a refusal there (e.g. an admin before the
+    // backend grants read-only moderation access) does not hide the rest of the course.
+    let announcementRows: BackendAnnouncement[] = [];
     try {
-      const [announcementRows, upcomingRows, gradebookData] = await Promise.all([
-        api.listAnnouncements(course.courseId),
+      announcementRows = await api.listAnnouncements(course.courseId);
+      setAnnouncementsError(null);
+    } catch (error) {
+      setAnnouncementsError(
+        error instanceof ApiError && error.status === 403
+          ? 'Announcements for this course are not available to your role.'
+          : error instanceof Error ? error.message : 'Unable to load announcements'
+      );
+    }
+    try {
+      const [upcomingRows, gradebookData] = await Promise.all([
         api.listCourseUpcoming(course.courseId),
         api.getGradebook(course.courseId),
       ]);
@@ -281,7 +291,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   };
 
   const handlePublishPlanToStream = async () => {
-    if (!generatedPlan || !session || !course.courseId) return;
+    if (!generatedPlan || !session || !course.courseId || !canPostAnnouncement) return;
     try {
       await api.createAnnouncement(course.courseId, {
         title: `AI Lecture Plan: ${planTopic}`,
@@ -793,10 +803,15 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
           {/* Right Column: Announcements Feed */}
           <div className="stack">
-            {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
+            {announcementsError && (
+              <p className="notice notice-negative" role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                <span>{announcementsError}</span>
+                <button type="button" className="link-button" onClick={() => void refreshCourseData()}>Retry</button>
+              </p>
+            )}
             {commentsError && <p className="notice notice-negative" role="alert">{commentsError}</p>}
 
-            {/* Announcement Composer (Only Teachers & CRs; regular students cannot post) */}
+            {/* Announcement Composer: the course's assigned teacher only */}
             {canPostAnnouncement && (
               <div className="panel" style={{ padding: isComposerExpanded ? undefined : '12px 16px' }}>
                 {!isComposerExpanded ? (
@@ -868,8 +883,12 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             )}
 
             {/* Stream Feed */}
-            {announcements.length === 0 && (
-              <p className="panel muted">No announcements yet. Posts you make here show up for every student in the class.</p>
+            {announcements.length === 0 && !announcementsError && (
+              <p className="panel muted">
+                {canPostAnnouncement
+                  ? 'No announcements yet. Posts you make here show up for every student in the class.'
+                  : 'No announcements yet. Your teacher’s posts will appear here.'}
+              </p>
             )}
             {announcements.map((item) => (
               <article key={item.id} className="panel">
@@ -1597,7 +1616,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                     {isGeneratingPlan ? 'Drafting…' : 'Draft lecture plan'}
                   </button>
 
-                  {generatedPlan && (
+                  {generatedPlan && canPostAnnouncement && (
                     <button className="btn btn-secondary btn-sm" onClick={handlePublishPlanToStream}>
                       <Send size={13} aria-hidden="true" />
                       <span>Post to stream</span>

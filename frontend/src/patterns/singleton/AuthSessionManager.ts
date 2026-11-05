@@ -7,23 +7,40 @@ import {
   SecurityFilter
 } from '../chain-of-responsibility';
 import { UserSessionFactory } from '../factory-method';
-import api from '../../services/api';
+import api, { ApiError, type BackendUser } from '../../services/api';
 
 export type AuthListener = (
-  event: 'login' | 'logout' | 'register' | 'admin_update' | 'profile_update',
+  event: 'login' | 'logout' | 'register' | 'profile_update',
   session: IUserSession | null
 ) => void;
 
+export type AuthResult = FilterResult & { session?: IUserSession };
+
+/**
+ * Only the public profile is kept between reloads (never a password, never a token),
+ * and only in sessionStorage, so it is gone when the tab closes. The access and
+ * refresh tokens are handled by the API client.
+ */
+const PROFILE_KEY = 'classoverflow_session_profile';
+
+const GENERIC_LOGIN_ERROR = 'Invalid academic credentials. Please re-check your email and password.';
+const OFFLINE_ERROR = "Can't reach the ClassOverflow server. Check that the backend is running, then try again.";
+
 /**
  * Singleton Pattern: AuthSessionManager
- * Creational Pattern: Guarantees a single, centralized state store for credentials,
- * active user session, institutional user directory, and security pipeline execution.
+ * Creational Pattern: Guarantees a single, centralized store for the active session
+ * and the client-side validation pipeline.
+ *
+ * Security notes (see docs/ClassOverFlow_Gaps_and_Remedies_Checklist.pdf):
+ * - The backend is the only source of truth for credentials. There is no local
+ *   user roster, no stored password and no offline login fallback.
+ * - The client-side RateLimitFilter is a usability guard only; the real limit
+ *   must be enforced by FastAPI (HTTP 429), which this class also understands.
  */
 export class AuthSessionManager {
   private static instance: AuthSessionManager | null = null;
 
   private currentSession: IUserSession | null = null;
-  private users: AcademicUser[] = [];
   private listeners: AuthListener[] = [];
 
   // Chain of Responsibility Pipeline
@@ -34,7 +51,6 @@ export class AuthSessionManager {
   private pipeline: SecurityFilter;
 
   private constructor() {
-    // Initialize Chain of Responsibility filters
     this.rateLimiter = new RateLimitFilter();
     this.emailFilter = new InstitutionalEmailFilter();
     this.passwordFilter = new PasswordStrengthFilter();
@@ -47,8 +63,7 @@ export class AuthSessionManager {
       .setNext(this.passwordFilter)
       .setNext(this.phoneFilter);
 
-    this.users = this.loadUsersFromStorage();
-    this.currentSession = this.loadActiveSessionFromStorage();
+    this.currentSession = this.restoreSession();
   }
 
   public static getInstance(): AuthSessionManager {
@@ -58,108 +73,69 @@ export class AuthSessionManager {
     return AuthSessionManager.instance;
   }
 
-  private loadUsersFromStorage(): AcademicUser[] {
-    const raw = localStorage.getItem('classoverflow_users_v6');
-    if (raw) {
-      try {
-        const parsed: AcademicUser[] = JSON.parse(raw);
-        if (
-          Array.isArray(parsed) &&
-          parsed.length === 4 &&
-          parsed.some(u => u.fullName.includes('Gojo'))
-        ) {
-          return parsed;
-        }
-      } catch (e) {
-        console.error('Failed to parse cached users', e);
-      }
+  // --- Session persistence (profile only) ---
+
+  private restoreSession(): IUserSession | null {
+    const token = api.getToken();
+    if (!token) {
+      this.clearProfile();
+      return null;
     }
-
-    // Exactly 1 ID for each role
-    const defaultRoster: AcademicUser[] = [
-      {
-        id: 'usr_gojo_teacher',
-        email: 'gojo.teacher@university.edu',
-        password: 'Password@123',
-        fullName: 'Gojo Satoru',
-        role: 'teacher',
-        department: 'Computer Science & Engineering',
-        avatar: 'GS',
-        isVerified: true,
-        isInstitutional: true,
-        phone: '+8801711223344'
-      },
-      {
-        id: 'usr_daemon_cr',
-        email: 'daemon.cr@university.edu',
-        password: 'Password@123',
-        fullName: 'Daemon Targaryen',
-        role: 'cr',
-        roll: '55',
-        department: 'Computer Science & Engineering',
-        avatar: 'DT',
-        isVerified: true,
-        isInstitutional: true,
-        phone: '+8801811556677'
-      },
-      {
-        id: 'usr_ayanokoji_student',
-        email: 'ayanokoji.student@university.edu',
-        password: 'Password@123',
-        fullName: 'Kiyotaka Ayanokoji',
-        role: 'student',
-        roll: '14',
-        department: 'Computer Science & Engineering',
-        avatar: 'KA',
-        isVerified: true,
-        isInstitutional: true,
-        phone: '+8801911889900'
-      },
-      {
-        id: 'usr_aizen_admin',
-        email: 'aizen.admin@university.edu',
-        password: 'Password@123',
-        fullName: 'Aizen Sosuke',
-        role: 'admin',
-        department: 'Computer Science & Engineering',
-        avatar: 'AS',
-        isVerified: true,
-        isInstitutional: true,
-        phone: '+8801511001122'
-      }
-    ];
-
-    this.saveUsersToStorage(defaultRoster);
-    return defaultRoster;
-  }
-
-  private saveUsersToStorage(roster: AcademicUser[]): void {
     try {
-      localStorage.setItem('classoverflow_users_v6', JSON.stringify(roster));
-    } catch (e) {
-      console.warn('Unable to persist users', e);
+      const raw = sessionStorage.getItem(PROFILE_KEY);
+      if (!raw) return null;
+      const profile: AcademicUser = JSON.parse(raw);
+      return UserSessionFactory.createSession({ ...profile, token });
+    } catch {
+      this.clearProfile();
+      return null;
     }
   }
 
-  private loadActiveSessionFromStorage(): IUserSession | null {
-    const raw = localStorage.getItem('classoverflow_active_session_v5');
-    if (raw) {
-      try {
-        const parsed: AcademicUser = JSON.parse(raw);
-        return UserSessionFactory.createSession(parsed);
-      } catch (e) {
-        localStorage.removeItem('classoverflow_active_session_v5');
-      }
+  private saveProfile(user: AcademicUser): void {
+    // Strip anything secret before it touches storage.
+    const { token: _token, ...profile } = user;
+    try {
+      sessionStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    } catch {
+      // Storage disabled: the session still works until the tab reloads.
     }
-    return null;
+  }
+
+  private clearProfile(): void {
+    try {
+      sessionStorage.removeItem(PROFILE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  private startSession(user: AcademicUser, token: string): IUserSession {
+    this.currentSession = UserSessionFactory.createSession({ ...user, token });
+    this.saveProfile(user);
+    return this.currentSession;
+  }
+
+  private toAcademicUser(backend: BackendUser, fallback: Partial<AcademicUser> = {}): AcademicUser {
+    const email = (backend.email || fallback.email || '').toLowerCase();
+    const fullName = backend.full_name || fallback.fullName || backend.username || email.split('@')[0];
+    return {
+      id: backend.user_id ? `usr_${backend.user_id}` : fallback.id || `usr_${email}`,
+      email,
+      fullName,
+      username: backend.username || fallback.username,
+      role: ((backend.role as AcademicRole) || fallback.role || 'student'),
+      department: fallback.department || 'Computer Science & Engineering',
+      roll: fallback.roll,
+      phone: backend.phone ?? fallback.phone,
+      avatar: this.generateInitials(fullName),
+      isVerified: backend.is_verified ?? fallback.isVerified ?? true,
+      isInstitutional: email.endsWith('@university.edu'),
+    };
   }
 
   public getCurrentSession(): IUserSession | null {
     return this.currentSession;
-  }
-
-  public getUsers(): AcademicUser[] {
-    return [...this.users];
   }
 
   public subscribe(listener: AuthListener): () => void {
@@ -169,7 +145,7 @@ export class AuthSessionManager {
     };
   }
 
-  private notify(event: 'login' | 'logout' | 'register' | 'admin_update' | 'profile_update'): void {
+  private notify(event: 'login' | 'logout' | 'register' | 'profile_update'): void {
     this.listeners.forEach(cb => {
       try {
         cb(event, this.currentSession);
@@ -179,224 +155,132 @@ export class AuthSessionManager {
     });
   }
 
+  /** Maps a failed backend call to a message a person can act on. */
+  private describeError(err: unknown, fallback: string): AuthResult {
+    if (err instanceof ApiError) {
+      if (err.status === 429) {
+        return { success: false, filterName: 'ServerRateLimit', message: err.message, retryAfter: err.retryAfter ?? 30 };
+      }
+      // 0 = network failure; 502-504 = the dev proxy or a gateway could not reach FastAPI.
+      if (err.status === 0 || (err.status >= 502 && err.status <= 504)) {
+        return { success: false, message: OFFLINE_ERROR };
+      }
+      return { success: false, message: err.message || fallback };
+    }
+    return { success: false, message: fallback };
+  }
+
+  /**
+   * Re-checks a restored session with the backend. Signs the user out locally if
+   * the token is no longer accepted; keeps the session if the server is just offline.
+   */
+  public async revalidate(): Promise<void> {
+    if (!this.currentSession) return;
+    try {
+      const profile = await api.getProfile();
+      const current = this.currentSession;
+      const user = this.toAcademicUser(profile, {
+        id: current.id,
+        email: current.email,
+        fullName: current.name,
+        role: current.role,
+        department: current.department,
+        roll: current.roll,
+        phone: current.phone,
+      });
+      this.startSession(user, current.token);
+      this.notify('profile_update');
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        api.setTokens(null, null);
+        this.currentSession = null;
+        this.clearProfile();
+        this.notify('logout');
+      }
+    }
+  }
+
   /**
    * Login Pipeline:
-   * Passes request to Chain of Responsibility filters, verifies credentials with
-   * backend FastAPI service, receives real JWT token, and creates polymorphic session.
+   * Runs the client-side filters, then authenticates against FastAPI. There is no
+   * offline fallback: if the backend cannot confirm the credentials, sign-in fails.
    */
-  public async login(email: string, password?: string): Promise<FilterResult & { session?: IUserSession }> {
+  public async login(email: string, password: string): Promise<AuthResult> {
     const cleanEmail = (email || '').trim().toLowerCase();
-    const effectivePassword = password || 'Password@123';
 
-    // 1. Pass through Chain of Responsibility
-    const filterResult = this.pipeline.handle({
-      email: cleanEmail,
-      isRegistration: false
-    });
+    const filterResult = this.pipeline.handle({ email: cleanEmail, isRegistration: false });
+    if (!filterResult.success) return filterResult;
 
-    if (!filterResult.success) {
-      return filterResult;
+    if (!password) {
+      return { success: false, message: 'Please enter your password.' };
     }
 
-    // 2. Authenticate against Backend API
     try {
-      const authData = await api.login({ email: cleanEmail, password: effectivePassword });
-      if (authData && authData.access_token) {
-        this.rateLimiter.resetAttempts(cleanEmail);
-
-        let user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
-        if (!user) {
-          user = {
-            id: `usr_${authData.user.user_id || Date.now()}`,
-            email: cleanEmail,
-            password: effectivePassword,
-            fullName: authData.user.full_name || authData.user.username || cleanEmail.split('@')[0],
-            username: authData.user.username,
-            role: (authData.user.role as AcademicRole) || 'student',
-            department: 'Computer Science & Engineering',
-            avatar: this.generateInitials(authData.user.full_name || authData.user.username || cleanEmail),
-            isVerified: true,
-            isInstitutional: cleanEmail.endsWith('@university.edu')
-          };
-          this.users.push(user);
-          this.saveUsersToStorage(this.users);
-        }
-
-        // Factory Method generates session
-        const sessionUser = {
-          ...user,
-          fullName: authData.user.full_name || user.fullName,
-          username: authData.user.username || user.username,
-          phone: authData.user.phone ?? user.phone,
-          role: (authData.user.role as AcademicRole) || user.role,
-        };
-        this.currentSession = UserSessionFactory.createSession(sessionUser);
-        (this.currentSession as any).token = authData.access_token;
-        localStorage.setItem('classoverflow_active_session_v5', JSON.stringify({
-          ...sessionUser,
-          token: authData.access_token
-        }));
-
-        this.notify('login');
-        return {
-          success: true,
-          session: this.currentSession,
-          message: `Welcome back, ${this.currentSession.name}!`
-        };
-      }
-    } catch (err: any) {
-      console.warn('Backend login attempt info:', err.message);
-      if (err.status === 401) {
+      const authData = await api.login({ email: cleanEmail, password });
+      this.rateLimiter.resetAttempts(cleanEmail);
+      const user = this.toAcademicUser(authData.user, { email: cleanEmail });
+      const session = this.startSession(user, authData.access_token);
+      this.notify('login');
+      return { success: true, session, message: `Welcome back, ${session.name}!` };
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 404)) {
         this.rateLimiter.recordFailure(cleanEmail);
-        return {
-          success: false,
-          message: 'Invalid academic credentials. Please re-check your email and password.'
-        };
+        return { success: false, message: GENERIC_LOGIN_ERROR };
       }
+      return this.describeError(err, GENERIC_LOGIN_ERROR);
     }
-
-    // Fallback: Lookup in local credentials store
-    const user = this.users.find(u => u.email.toLowerCase() === cleanEmail);
-    if (!user || (password && user.password !== password)) {
-      this.rateLimiter.recordFailure(cleanEmail);
-      return {
-        success: false,
-        message: 'Invalid academic credentials. Please re-check your email and password.'
-      };
-    }
-
-    // Success: reset failed counter
-    this.rateLimiter.resetAttempts(cleanEmail);
-
-    // Factory Method generates session
-    this.currentSession = UserSessionFactory.createSession(user);
-    localStorage.setItem('classoverflow_active_session_v5', JSON.stringify(user));
-
-    this.notify('login');
-    return {
-      success: true,
-      session: this.currentSession,
-      message: `Welcome back, ${this.currentSession.name}!`
-    };
   }
 
   /**
    * Registration Pipeline:
-   * Enforces all 4 security filters, registers with FastAPI backend, creates user and session.
+   * Enforces the security filters, registers with FastAPI, then signs in.
    */
   public async register(data: {
     fullName: string;
     username?: string;
     email: string;
-    password?: string;
+    password: string;
     phone?: string;
     role: AcademicRole;
-  }): Promise<FilterResult & { session?: IUserSession }> {
+  }): Promise<AuthResult> {
     const cleanEmail = (data.email || '').trim().toLowerCase();
-    const effectivePassword = data.password || 'Password@123';
+    const request: SecurityRequest = { ...data, email: cleanEmail, isRegistration: true };
 
-    const request: SecurityRequest = {
-      ...data,
-      email: cleanEmail,
-      isRegistration: true
-    };
-
-    // 1. Full Chain of Responsibility verification
     const filterResult = this.pipeline.handle(request);
-    if (!filterResult.success) {
-      return filterResult;
-    }
+    if (!filterResult.success) return filterResult;
 
-    // 2. Duplicate Check locally
-    if (this.users.some(u => u.email.toLowerCase() === cleanEmail)) {
-      return {
-        success: false,
-        message: 'An academic account with this email address is already registered.'
-      };
-    }
-
-    // 3. Register with backend API
     try {
       await api.register({
         fullName: data.fullName,
         username: data.username,
         email: cleanEmail,
-        password: effectivePassword,
+        password: data.password,
         phone: data.phone,
         role: data.role,
       });
-
-      const authData = await api.login({ email: cleanEmail, password: effectivePassword });
-      const newUser: AcademicUser = {
-        id: `usr_${authData.user.user_id || Date.now()}`,
+      const authData = await api.login({ email: cleanEmail, password: data.password });
+      const user = this.toAcademicUser(authData.user, {
+        email: cleanEmail,
         fullName: data.fullName,
         username: data.username,
-        email: cleanEmail,
-        password: effectivePassword,
         phone: data.phone,
         role: data.role,
-        department: 'Computer Science & Engineering',
-        avatar: this.generateInitials(data.fullName),
-        isVerified: Boolean(request.isInstitutional),
-        isInstitutional: Boolean(request.isInstitutional)
-      };
-
-      this.users.push(newUser);
-      this.saveUsersToStorage(this.users);
-
-      this.currentSession = UserSessionFactory.createSession(newUser);
-      (this.currentSession as any).token = authData.access_token;
-      localStorage.setItem('classoverflow_active_session_v5', JSON.stringify({
-        ...newUser,
-        token: authData.access_token
-      }));
-
+      });
+      const session = this.startSession(user, authData.access_token);
       this.notify('register');
       return {
         success: true,
-        session: this.currentSession,
-        message: newUser.isVerified
-          ? `Account registered successfully! Welcome to ClassOverflow.`
-          : `Account registered! Non-institutional domain accounts require administrative verification.`
+        session,
+        message: session.isVerified
+          ? 'Account registered successfully! Welcome to ClassOverflow.'
+          : 'Account registered! Non-institutional domain accounts require administrative verification.',
       };
-    } catch (err: any) {
-      console.warn('Backend registration failed, fallback to local store:', err.message);
-      if (err.status === 409) {
-        return {
-          success: false,
-          message: 'An account with this email is already registered in the backend.'
-        };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        return { success: false, message: 'An account with this email is already registered.' };
       }
+      return this.describeError(err, 'Registration failed. Please try again.');
     }
-
-    const newUser: AcademicUser = {
-      id: 'usr_' + Date.now(),
-      fullName: data.fullName,
-      username: data.username,
-      email: cleanEmail,
-      password: effectivePassword,
-      phone: data.phone,
-      role: data.role,
-      department: 'Computer Science & Engineering',
-      avatar: this.generateInitials(data.fullName),
-      isVerified: Boolean(request.isInstitutional),
-      isInstitutional: Boolean(request.isInstitutional)
-    };
-
-    this.users.push(newUser);
-    this.saveUsersToStorage(this.users);
-
-    this.currentSession = UserSessionFactory.createSession(newUser);
-    localStorage.setItem('classoverflow_active_session_v5', JSON.stringify(newUser));
-
-    this.notify('register');
-    return {
-      success: true,
-      session: this.currentSession,
-      message: newUser.isVerified
-        ? `Account registered successfully! Welcome to ClassOverflow.`
-        : `Account registered! Non-institutional domain accounts require administrative verification.`
-    };
   }
 
   public async logout(): Promise<void> {
@@ -406,7 +290,7 @@ export class AuthSessionManager {
       console.warn('API logout error:', e);
     }
     this.currentSession = null;
-    localStorage.removeItem('classoverflow_active_session_v5');
+    this.clearProfile();
     this.notify('logout');
   }
 
@@ -419,94 +303,32 @@ export class AuthSessionManager {
       throw new Error('You must be signed in to update your profile');
     }
 
-    const currentSession = this.currentSession;
+    const current = this.currentSession;
     const profile = await api.updateProfile({
       full_name: values.fullName.trim(),
       username: values.username.trim(),
-      ...(currentSession.role !== 'admin' ? { phone: values.phone?.trim() || null } : {}),
+      ...(current.role !== 'admin' ? { phone: values.phone?.trim() || null } : {}),
     });
-    const existingIndex = this.users.findIndex(
-      (user) => user.email.toLowerCase() === currentSession.email.toLowerCase()
-    );
-    const existingUser = existingIndex >= 0 ? this.users[existingIndex] : undefined;
-    const updatedUser: AcademicUser = {
-      ...existingUser,
-      id: currentSession.id,
-      email: currentSession.email,
-      fullName: profile.full_name || values.fullName.trim(),
-      username: profile.username || values.username.trim(),
-      role: currentSession.role,
-      department: currentSession.department,
-      roll: currentSession.roll,
-      phone: profile.phone ?? undefined,
-      avatar: this.generateInitials(profile.full_name || values.fullName.trim()),
-      isVerified: currentSession.isVerified,
-      isInstitutional: currentSession.isInstitutional,
-      token: currentSession.token,
-    };
-
-    if (existingIndex >= 0) this.users[existingIndex] = { ...updatedUser, password: existingUser?.password };
-    else this.users.push(updatedUser);
-    this.saveUsersToStorage(this.users);
-    this.currentSession = UserSessionFactory.createSession(updatedUser);
-    localStorage.setItem('classoverflow_active_session_v5', JSON.stringify(updatedUser));
+    const user = this.toAcademicUser(profile, {
+      id: current.id,
+      email: current.email,
+      fullName: values.fullName.trim(),
+      username: values.username.trim(),
+      role: current.role,
+      department: current.department,
+      roll: current.roll,
+      isVerified: current.isVerified,
+    });
+    const session = this.startSession(user, current.token);
     this.notify('profile_update');
-    return this.currentSession;
-  }
-
-  public getUsersByRole(role: AcademicRole): AcademicUser[] {
-    return this.users.filter(u => u.role === role);
-  }
-
-  // --- Admin Account Management Methods (Functional Req 4.1) ---
-
-  public verifyUser(email: string): boolean {
-    const user = this.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (user) {
-      user.isVerified = true;
-      this.saveUsersToStorage(this.users);
-      this.notify('admin_update');
-      return true;
-    }
-    return false;
-  }
-
-  public updateUserRole(email: string, newRole: AcademicRole): boolean {
-    const user = this.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (user) {
-      user.role = newRole;
-      this.saveUsersToStorage(this.users);
-
-      // If active session is modified, update it reactively
-      if (this.currentSession && this.currentSession.email.toLowerCase() === email.toLowerCase()) {
-        this.currentSession = UserSessionFactory.createSession(user);
-        localStorage.setItem('classoverflow_active_session_v5', JSON.stringify(user));
-      }
-
-      this.notify('admin_update');
-      return true;
-    }
-    return false;
-  }
-
-  public deleteUser(email: string): boolean {
-    const index = this.users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-    if (index !== -1) {
-      if (this.currentSession && this.currentSession.email.toLowerCase() === email.toLowerCase()) {
-        return false; // Prevent deleting active session
-      }
-      this.users.splice(index, 1);
-      this.saveUsersToStorage(this.users);
-      this.notify('admin_update');
-      return true;
-    }
-    return false;
+    return session;
   }
 
   /**
-   * Verify whether an email exists for password recovery
+   * Password recovery, step 1: check that the email belongs to an account.
+   * The account's name is deliberately not returned to the UI.
    */
-  public async verifyResetEmail(email: string): Promise<{ success: boolean; email?: string; fullName?: string; message?: string }> {
+  public async verifyResetEmail(email: string): Promise<{ success: boolean; message?: string; retryAfter?: number }> {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail) {
       return { success: false, message: 'Please enter your university email.' };
@@ -514,85 +336,39 @@ export class AuthSessionManager {
 
     try {
       const data = await api.verifyResetEmail(cleanEmail);
-      if (data && data.exists) {
-        return {
-          success: true,
-          email: cleanEmail,
-          fullName: data.full_name,
-        };
-      }
-    } catch (err: any) {
-      console.warn('Backend verifyResetEmail failed, checking local store:', err?.message);
+      if (data?.exists) return { success: true };
+      return { success: false, message: 'We could not start a reset for that email. Check the address and try again.' };
+    } catch (err) {
+      const res = this.describeError(err, 'We could not start a reset for that email. Check the address and try again.');
+      return { success: false, message: res.message, retryAfter: res.retryAfter };
     }
-
-    // Local fallback check
-    const user = this.users.find((u) => u.email.toLowerCase() === cleanEmail);
-    if (user) {
-      return {
-        success: true,
-        email: cleanEmail,
-        fullName: user.fullName,
-      };
-    }
-
-    return {
-      success: false,
-      message: 'No registered account found with this email address.',
-    };
   }
 
   /**
-   * Reset Password without email verification token (Direct Reset)
+   * Password recovery, step 2. Succeeds only when the backend confirms the change;
+   * nothing is written locally.
    */
   public async resetPassword(
     email: string,
     newPassword: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; retryAfter?: number }> {
     const cleanEmail = (email || '').trim().toLowerCase();
 
     if (newPassword.length < 8) {
-      return {
-        success: false,
-        message: 'Password must be at least 8 characters long.',
-      };
+      return { success: false, message: 'Password must be at least 8 characters long.' };
     }
 
-    let backendSuccess = false;
     try {
-      const res = await api.resetPassword({
+      await api.resetPassword({
         email: cleanEmail,
         new_password: newPassword,
         confirm_password: newPassword,
       });
-      if (res && res.message) {
-        backendSuccess = true;
-      }
-    } catch (err: any) {
-      console.warn('Backend resetPassword failed or offline, updating locally:', err?.message);
+      return { success: true, message: 'Password updated. Sign in with your new password.' };
+    } catch (err) {
+      const res = this.describeError(err, 'Unable to update the password. Please try again.');
+      return { success: false, message: res.message, retryAfter: res.retryAfter };
     }
-
-    // Update in local users store
-    const userIndex = this.users.findIndex((u) => u.email.toLowerCase() === cleanEmail);
-    if (userIndex !== -1) {
-      this.users[userIndex].password = newPassword;
-      this.saveUsersToStorage(this.users);
-      return {
-        success: true,
-        message: 'Password has been successfully updated. You can now log in.',
-      };
-    }
-
-    if (backendSuccess) {
-      return {
-        success: true,
-        message: 'Password has been successfully updated. You can now log in.',
-      };
-    }
-
-    return {
-      success: false,
-      message: 'Unable to update password. Please check your email and try again.',
-    };
   }
 
   private generateInitials(name: string): string {

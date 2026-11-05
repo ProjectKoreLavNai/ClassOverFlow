@@ -30,7 +30,7 @@ export abstract class UserSession implements IUserSession {
     this.avatar = data.avatar || this.generateInitials(data.fullName);
     this.isVerified = data.isVerified;
     this.isInstitutional = data.isInstitutional;
-    this.token = data.token || 'jwt_co_' + Math.random().toString(36).substring(2, 10);
+    this.token = data.token || '';
   }
 
   private generateInitials(name: string): string {

@@ -1,33 +1,32 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { AcademicRole, AcademicUser, FilterResult, IUserSession } from '../types/auth';
+import type { AcademicRole, FilterResult, IUserSession } from '../types/auth';
 import { AuthSessionManager } from '../patterns/singleton';
 import type { SecurityCheckResult, SecurityViolation } from '../patterns/proxy';
+import { DEMO_ACCOUNTS, DEMO_ENABLED, DEMO_PASSWORD } from '../config/demoAccounts';
 
 import api from '../services/api';
 
+type AuthResult = FilterResult & { session?: IUserSession };
+
 interface AuthContextValue {
   session: IUserSession | null;
-  users: AcademicUser[];
   securityViolation: SecurityViolation | null;
   isBackendConnected: boolean;
-  login: (email: string, password?: string) => Promise<FilterResult & { session?: IUserSession }>;
+  login: (email: string, password: string) => Promise<AuthResult>;
   register: (data: {
     fullName: string;
     username?: string;
     email: string;
-    password?: string;
+    password: string;
     phone?: string;
     role: AcademicRole;
-  }) => Promise<FilterResult & { session?: IUserSession }>;
+  }) => Promise<AuthResult>;
   updateProfile: (data: { fullName: string; username: string; phone?: string }) => Promise<IUserSession>;
   logout: () => Promise<void>;
-  switchPersona: (roleOrEmail: AcademicRole | string) => Promise<void>;
-  loginAsUser: (email: string) => Promise<FilterResult & { session?: IUserSession }>;
-  verifyUser: (email: string) => boolean;
-  updateUserRole: (email: string, newRole: AcademicRole) => boolean;
-  deleteUser: (email: string) => boolean;
-  verifyResetEmail: (email: string) => Promise<{ success: boolean; email?: string; fullName?: string; message?: string }>;
-  resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message: string }>;
+  /** Development only: signs in as a seeded demo account. Fails in production builds. */
+  switchPersona: (role: AcademicRole) => Promise<AuthResult>;
+  verifyResetEmail: (email: string) => Promise<{ success: boolean; message?: string; retryAfter?: number }>;
+  resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message: string; retryAfter?: number }>;
   setViolation: (check: SecurityCheckResult) => void;
   clearViolation: () => void;
 }
@@ -37,12 +36,10 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const authManager = AuthSessionManager.getInstance();
   const [session, setSession] = useState<IUserSession | null>(authManager.getCurrentSession());
-  const [users, setUsers] = useState<AcademicUser[]>(authManager.getUsers());
   const [securityViolation, setSecurityViolation] = useState<SecurityViolation | null>(null);
   const [isBackendConnected, setIsBackendConnected] = useState<boolean>(false);
 
   useEffect(() => {
-    // Check backend connection
     const checkConnection = async () => {
       try {
         await api.checkHealth();
@@ -59,29 +56,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const unsubscribe = authManager.subscribe((_event, updatedSession) => {
       setSession(updatedSession);
-      setUsers(authManager.getUsers());
     });
+    // A session restored after a reload is confirmed with the backend once.
+    void authManager.revalidate();
     return () => unsubscribe();
   }, [authManager]);
 
-  const login = async (email: string, password?: string) => {
+  const login = async (email: string, password: string) => {
     const res = await authManager.login(email, password);
     if (res.session) setSession(res.session);
     return res;
   };
 
-  const loginAsUser = async (email: string) => {
-    return login(email, 'Password@123');
-  };
-
-  const register = async (data: {
-    fullName: string;
-    username?: string;
-    email: string;
-    password?: string;
-    phone?: string;
-    role: AcademicRole;
-  }) => {
+  const register: AuthContextValue['register'] = async (data) => {
     const res = await authManager.register(data);
     if (res.session) setSession(res.session);
     return res;
@@ -96,26 +83,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSession(null);
   };
 
-  const switchPersona = async (roleOrEmail: AcademicRole | string) => {
-    if (roleOrEmail.includes('@')) {
-      await login(roleOrEmail, 'Password@123');
-      return;
+  const switchPersona = async (role: AcademicRole): Promise<AuthResult> => {
+    const account = DEMO_ACCOUNTS.find((item) => item.role === role);
+    if (!DEMO_ENABLED || !account) {
+      return { success: false, message: 'Demo accounts are only available in development builds.' };
     }
-    const personaMap: Record<AcademicRole, string> = {
-      teacher: 'gojo.teacher@university.edu',
-      cr: 'daemon.cr@university.edu',
-      student: 'ayanokoji.student@university.edu',
-      admin: 'aizen.admin@university.edu'
-    };
-    const targetEmail = personaMap[roleOrEmail as AcademicRole];
-    if (targetEmail) {
-      await login(targetEmail, 'Password@123');
-    }
+    return login(account.email, DEMO_PASSWORD);
   };
-
-  const verifyUser = (email: string) => authManager.verifyUser(email);
-  const updateUserRole = (email: string, newRole: AcademicRole) => authManager.updateUserRole(email, newRole);
-  const deleteUser = (email: string) => authManager.deleteUser(email);
 
   const setViolation = (check: SecurityCheckResult) => {
     if (!check.allowed && check.violation) {
@@ -125,19 +99,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const clearViolation = () => setSecurityViolation(null);
 
-  const verifyResetEmail = async (email: string) => {
-    return authManager.verifyResetEmail(email);
-  };
-
-  const resetPassword = async (email: string, newPassword: string) => {
-    return authManager.resetPassword(email, newPassword);
-  };
+  const verifyResetEmail = (email: string) => authManager.verifyResetEmail(email);
+  const resetPassword = (email: string, newPassword: string) => authManager.resetPassword(email, newPassword);
 
   return (
     <AuthContext.Provider
       value={{
         session,
-        users,
         securityViolation,
         isBackendConnected,
         login,
@@ -145,10 +113,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updateProfile,
         logout,
         switchPersona,
-        loginAsUser,
-        verifyUser,
-        updateUserRole,
-        deleteUser,
         verifyResetEmail,
         resetPassword,
         setViolation,

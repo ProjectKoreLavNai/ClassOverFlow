@@ -575,18 +575,9 @@ export class ClassroomAcademicFacade {
     const course = this.getCourseByCode(courseCode);
     if (!course) return false;
 
-    // Teachers can post in courses they created OR courses they joined
-    if (session.role === 'teacher') {
-      return this.isTeacherCreator(course, session) || this.isStudentEnrolled(courseCode, session.email);
-    }
-
-    // Only CR has authority among students to post announcements
-    if (session.role === 'cr') {
-      return this.isStudentEnrolled(courseCode, session.email);
-    }
-
-    // Regular students and other roles cannot post announcements
-    return false;
+    // Access-control matrix: only the course's assigned teacher posts official
+    // announcements. CRs and students read and comment; admins have read-only access.
+    return session.role === 'teacher' && this.isTeacherCreator(course, session);
   }
 
   public getCourseByInvitationId(invitationId: string): CourseBlueprint | undefined {

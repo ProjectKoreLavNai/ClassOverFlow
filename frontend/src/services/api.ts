@@ -113,47 +113,96 @@ export interface BackendComment {
 export class ApiError extends Error {
   public status: number;
   public details: any;
+  /** Seconds the server asked us to wait (HTTP 429 Retry-After), when it sent one. */
+  public retryAfter: number | null;
 
-  constructor(message: string, status: number, details?: any) {
+  constructor(message: string, status: number, details?: any, retryAfter: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.details = details;
+    this.retryAfter = retryAfter;
   }
 }
+
+/** True when the server refused the request because of its rate limit. */
+export const isRateLimited = (err: unknown): err is ApiError =>
+  err instanceof ApiError && err.status === 429;
+
+const parseRetryAfter = (value: string | null): number | null => {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(1, Math.ceil(seconds));
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(1, Math.ceil((date - Date.now()) / 1000));
+};
+
+/*
+ * Token storage (security gap: "Safe browser session and credential storage").
+ * Tokens are held in memory and mirrored to sessionStorage only, so they are
+ * never written to localStorage and disappear when the tab is closed.
+ * Stopgap until the backend issues Secure, HttpOnly, SameSite cookies.
+ */
+const ACCESS_KEY = 'classoverflow_access_token';
+const REFRESH_KEY = 'classoverflow_refresh_token';
+const LEGACY_LOCAL_KEYS = [
+  ACCESS_KEY,
+  REFRESH_KEY,
+  'classoverflow_users_v6',
+  'classoverflow_active_session_v5',
+];
+
+const readSession = (key: string): string | null => {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writeSession = (key: string, value: string | null) => {
+  try {
+    if (value) sessionStorage.setItem(key, value);
+    else sessionStorage.removeItem(key);
+  } catch {
+    // Storage disabled: the in-memory copy still works for this tab.
+  }
+};
 
 class ApiClient {
   private token: string | null = null;
   private refreshToken: string | null = null;
 
   constructor() {
-    this.token = localStorage.getItem('classoverflow_access_token');
-    this.refreshToken = localStorage.getItem('classoverflow_refresh_token');
+    // Wipe credentials that older builds left in localStorage.
+    try {
+      LEGACY_LOCAL_KEYS.forEach((key) => localStorage.removeItem(key));
+    } catch {
+      // ignore
+    }
+    this.token = readSession(ACCESS_KEY);
+    this.refreshToken = readSession(REFRESH_KEY);
   }
 
   public setTokens(accessToken: string | null, refreshToken: string | null = null) {
     this.token = accessToken;
-    if (accessToken) {
-      localStorage.setItem('classoverflow_access_token', accessToken);
-    } else {
-      localStorage.removeItem('classoverflow_access_token');
-    }
+    writeSession(ACCESS_KEY, accessToken);
 
     if (refreshToken) {
       this.refreshToken = refreshToken;
-      localStorage.setItem('classoverflow_refresh_token', refreshToken);
+      writeSession(REFRESH_KEY, refreshToken);
     } else if (refreshToken === null && accessToken === null) {
       this.refreshToken = null;
-      localStorage.removeItem('classoverflow_refresh_token');
+      writeSession(REFRESH_KEY, null);
     }
   }
 
   public getToken(): string | null {
-    return this.token || localStorage.getItem('classoverflow_access_token');
+    return this.token;
   }
 
   public getRefreshToken(): string | null {
-    return this.refreshToken || localStorage.getItem('classoverflow_refresh_token');
+    return this.refreshToken;
   }
 
   public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -182,10 +231,23 @@ class ApiClient {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfter = parseRetryAfter(response.headers.get('Retry-After'));
+          throw new ApiError(
+            retryAfter
+              ? `Too many attempts. Try again in ${retryAfter}s.`
+              : 'Too many attempts. Wait a moment and try again.',
+            429,
+            data,
+            retryAfter
+          );
+        }
+        const detail = Array.isArray(data.detail)
+          ? data.detail.map((e: any) => e.msg).join(', ')
+          : data.detail;
         const errorMessage =
-          data.detail ||
-          data.error ||
-          (Array.isArray(data.error) ? data.error.map((e: any) => e.msg).join(', ') : null) ||
+          detail ||
+          (Array.isArray(data.error) ? data.error.map((e: any) => e.msg).join(', ') : data.error) ||
           response.statusText ||
           'API Request Failed';
         throw new ApiError(errorMessage, response.status, data);
@@ -206,12 +268,12 @@ class ApiClient {
   }
 
   // --- Authentication ---
-  public async login(payload: { email: string; password?: string }): Promise<AuthTokenResponse> {
+  public async login(payload: { email: string; password: string }): Promise<AuthTokenResponse> {
     const res = await this.request<{ data: AuthTokenResponse }>('/api/v1/auth/login', {
       method: 'POST',
       body: JSON.stringify({
         email: payload.email,
-        password: payload.password || 'Password@123',
+        password: payload.password,
       }),
     });
     this.setTokens(res.data.access_token, res.data.refresh_token);
@@ -221,7 +283,7 @@ class ApiClient {
   public async register(payload: {
     fullName: string;
     email: string;
-    password?: string;
+    password: string;
     phone?: string;
     role: string;
     username?: string;
@@ -236,7 +298,7 @@ class ApiClient {
         full_name: payload.fullName,
         username: username.length < 3 ? `${username}_usr` : username,
         email: payload.email,
-        password: payload.password || 'Password@123',
+        password: payload.password,
         role: payload.role.toLowerCase(),
         phone: payload.phone || null,
       }),

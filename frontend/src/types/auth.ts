@@ -10,7 +10,7 @@ export type AcademicRole = 'teacher' | 'cr' | 'student' | 'admin';
 export interface AcademicUser {
   id: string;
   email: string;
-  password?: string;
+  // No password field on purpose: credentials are never held or stored client-side.
   fullName: string;
   username?: string;
   role: AcademicRole;
@@ -28,6 +28,8 @@ export interface FilterResult {
   success: boolean;
   filterName?: string;
   message: string;
+  /** Seconds to wait before retrying, when a rate limit (client or server) applies. */
+  retryAfter?: number;
 }
 
 export interface SecurityRequest {
