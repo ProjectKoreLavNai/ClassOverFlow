@@ -12,7 +12,7 @@ import { useRetryCountdown } from '../../utils/useRetryCountdown';
 const FEATURES = [
   ['Course stream', 'Announcements that also reach the class Discord channel and Messenger group.'],
   ['Syllabus coverage', 'Tick off topics as they are taught; students see what is left before the exam.'],
-  ['Grades & attendance', 'One register per course, with everyone below the 75% minimum flagged.'],
+  ['Attendance & gradebook', 'Daily attendance with the 75% minimum flagged, plus a separate course gradebook.'],
   ['AI studio', 'Lecture plans and quizzes for teachers, revision notes from slides for students.'],
 ];
 
@@ -193,7 +193,7 @@ export const AuthPage: React.FC = () => {
               {/* Demo accounts (sign-in mode, development builds only) */}
               {mode === 'signin' && DEMO_ENABLED && (
                 <fieldset style={{ border: 'none' }}>
-                  <legend className="field-label" style={{ marginBottom: '8px' }}>Demo accounts (development build)</legend>
+                  <legend className="field-label" style={{ marginBottom: '8px' }}>Demo accounts</legend>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '8px' }}>
                     {DEMO_ACCOUNTS.map((item) => {
                       const isSelected = selectedDemoRole === item.role;
@@ -391,7 +391,7 @@ export const AuthPage: React.FC = () => {
           </div>
 
           <p className="muted" style={{ fontFamily: 'var(--font-display)', fontSize: '0.72rem', marginTop: '24px' }}>
-            Team Pr0jectK0reL4vN4i · Batch 3-1 software project
+            Semester 3-1 · Computer Science & Engineering
           </p>
         </aside>
       </div>

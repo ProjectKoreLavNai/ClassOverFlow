@@ -65,48 +65,48 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const systemFeatures = [
     {
       id: 'admin_console',
-      title: 'Institutional Administration & Governance',
-      description: 'Manage institutional accounts, verify domains, and audit course lifecycles.',
+      title: 'Admin console',
+      description: 'Verify accounts, manage user roles, and retire courses.',
       icon: ShieldAlert,
       color: 'var(--color-accent-secondary)',
       hasAccess: session.canAccessAdmin()
     },
     {
       id: 'cr_desk',
-      title: 'CR Coordination & Multi-Channel Broadcast',
-      description: 'Synchronize schedule changes and broadcast emergency deadline alerts to Discord & Messenger.',
+      title: 'CR desk',
+      description: 'Coordinate schedule polls and send deadline reminders to Discord and Messenger.',
       icon: Megaphone,
       color: 'var(--color-info)',
       hasAccess: session.canAccessCRDesk()
     },
     {
       id: 'course_creation',
-      title: 'Course Inception & Curriculum Management',
-      description: 'Establish new course offerings, assign grading weights, and enroll students.',
+      title: 'Course management',
+      description: 'Create courses, generate class codes, and configure marks distribution.',
       icon: BookOpen,
       color: 'var(--color-accent)',
       hasAccess: session.canCreateCourse()
     },
     {
       id: 'gradebook_edit',
-      title: 'Transactional Gradebook Modification',
-      description: 'Record, revise, and publish in-course assessment marks.',
+      title: 'Attendance & gradebook',
+      description: 'Record daily attendance and save assessment marks.',
       icon: FileSpreadsheet,
       color: 'var(--color-success)',
       hasAccess: session.canEditGrades()
     },
     {
       id: 'submit_work',
-      title: 'Coursework & Laboratory Task Submission',
-      description: 'Submit assignments, SRS models, and review automated feedback.',
+      title: 'Coursework & study tools',
+      description: 'Track upcoming assignments and generate lecture revision notes.',
       icon: CheckSquare,
       color: 'var(--color-info)',
       hasAccess: session.canSubmitWork()
     },
     {
       id: 'broadcast_alerts',
-      title: 'Cohort Announcement Broadcast',
-      description: 'Authorize multi-channel webhook broadcasts to cohort communication channels.',
+      title: 'Class announcements',
+      description: 'Post announcements to the course stream and connected channels.',
       icon: Megaphone,
       color: 'var(--color-accent-text)',
       hasAccess: session.canBroadcastAlerts()
@@ -282,20 +282,16 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
           </div>
         )}
 
-        {/* Authorized Features Section (Unauthorized features removed) */}
+        {/* Authorized Features Section */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.75rem' }}>
             <h4 style={{ fontSize: '1.05rem', fontFamily: 'var(--font-heading)', margin: 0 }}>
-              Authorized Platform Features
+              Permissions
             </h4>
             <span style={{ fontSize: '0.74rem', fontFamily: 'var(--font-display)', color: 'var(--color-muted-foreground)' }}>
-              {authorizedFeatures.length} accessible features
+              {authorizedFeatures.length} enabled
             </span>
           </div>
-
-          <p style={{ fontSize: '0.8rem', color: 'var(--color-muted-foreground)', marginBottom: '1rem' }}>
-            Features where this account lacks access are removed per Role-Based Access Control (RBAC).
-          </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
             {authorizedFeatures.map((feat) => {

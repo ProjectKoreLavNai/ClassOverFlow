@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, X, Sparkles, Check } from 'lucide-react';
+import { Copy, X, Check } from 'lucide-react';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
 import { CourseBlueprint } from '../../patterns/prototype/CoursePrototype';
 import { useAuth } from '../../context/AuthContext';
@@ -27,7 +27,6 @@ export const CloneCourseModal: React.FC<Props> = ({ sourceCourse, isOpen, onClos
     if (!session) return;
 
     const facade = ClassroomAcademicFacade.getInstance();
-    const startTime = performance.now();
     const result = facade.cloneCourseBlueprint(
       sourceCourse.code,
       newTitle,
@@ -35,10 +34,9 @@ export const CloneCourseModal: React.FC<Props> = ({ sourceCourse, isOpen, onClos
       newCode,
       session
     );
-    const elapsed = Math.round(performance.now() - startTime);
 
     if (result.success && result.clonedCourse) {
-      setFeedback(`Cloned in ${elapsed}ms via Prototype pattern! New join code: ${result.clonedCourse.cohortCode}`);
+      setFeedback(`Course duplicated. New class code: ${result.clonedCourse.cohortCode}`);
       setTimeout(() => {
         onCloned(result.clonedCourse!);
         onClose();
@@ -49,124 +47,81 @@ export const CloneCourseModal: React.FC<Props> = ({ sourceCourse, isOpen, onClos
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(10, 10, 10, 0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
-        padding: '1rem'
-      }}
-      onClick={onClose}
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <div
-        className="academic-card"
-        style={{
-          width: '100%',
-          maxWidth: '520px',
-          backgroundColor: 'var(--color-background)',
-          borderRadius: '12px',
-          padding: '2rem',
-          position: 'relative',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.18)'
-        }}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clone-course-title"
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
-          style={{ position: 'absolute', top: '1.25rem', right: '1.25rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-muted-foreground)' }}
+          className="btn btn-ghost btn-sm btn-icon modal-close"
+          aria-label="Close"
         >
-          <X size={20} />
+          <X size={18} aria-hidden="true" />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--color-accent-text)', marginBottom: '0.4rem' }}>
-          <Sparkles size={18} />
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 700 }}>
-            Pattern 5: Prototype Pattern (Deep Clone)
-          </span>
-        </div>
+        <h2 id="clone-course-title" className="modal-title">
+          Duplicate course
+        </h2>
 
-        <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
-          Duplicate Course Blueprint
-        </h3>
-
-        <p style={{ fontSize: '0.86rem', color: 'var(--color-muted-foreground)', marginBottom: '1.25rem' }}>
-          Deep-copies all <strong>{sourceCourse.units.length} units</strong> and <strong>{totalTopics} syllabus topics</strong> from <em>{sourceCourse.code}</em>. Completed progress will reset to 0% and a brand-new enrollment code will be generated.
+        <p className="modal-desc">
+          Copies all {sourceCourse.units.length} units and {totalTopics} syllabus topics from {sourceCourse.code} into a new term with a fresh class code.
         </p>
 
         {feedback && (
-          <div
-            style={{
-              padding: '0.65rem 0.85rem',
-              borderRadius: '6px',
-              backgroundColor: 'rgba(79, 107, 58, 0.1)',
-              border: '1px solid var(--color-success)',
-              color: 'var(--color-success)',
-              fontSize: '0.84rem',
-              marginBottom: '1rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.4rem'
-            }}
-          >
-            <Check size={16} />
+          <p className="notice notice-positive" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Check size={15} aria-hidden="true" />
             <span>{feedback}</span>
-          </div>
+          </p>
         )}
 
-        <form onSubmit={handleClone} style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-          <div>
-            <label style={{ display: 'block', fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-              Cloned Course Code
-            </label>
+        <form onSubmit={handleClone} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <label className="field">
+            <span className="field-label">Course code</span>
             <input
+              className="input"
               type="text"
               value={newCode}
               onChange={(e) => setNewCode(e.target.value)}
               required
-              style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--color-border-strong)', boxSizing: 'border-box' }}
             />
-          </div>
+          </label>
 
-          <div>
-            <label style={{ display: 'block', fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-              New Course Title
-            </label>
+          <label className="field">
+            <span className="field-label">Course title</span>
             <input
+              className="input"
               type="text"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               required
-              style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--color-border-strong)', boxSizing: 'border-box' }}
             />
-          </div>
+          </label>
 
-          <div>
-            <label style={{ display: 'block', fontFamily: 'var(--font-display)', fontSize: '0.72rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-              Target Academic Term
-            </label>
+          <label className="field">
+            <span className="field-label">Term</span>
             <select
+              className="select"
               value={newTerm}
               onChange={(e) => setNewTerm(e.target.value)}
-              style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: '6px', border: '1px solid var(--color-border-strong)', background: 'var(--color-background)', boxSizing: 'border-box' }}
             >
               <option value="Spring 2027">Spring 2027</option>
               <option value="Summer 2027">Summer 2027</option>
               <option value="Fall 2027">Fall 2027</option>
-              <option value="Special Term">Special Remedial Term</option>
+              <option value="Special Term">Special Term</option>
             </select>
-          </div>
+          </label>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <Copy size={15} />
-              <span>Clone Blueprint (≤150ms)</span>
+            <button type="submit" className="btn btn-primary">
+              <Copy size={15} aria-hidden="true" />
+              <span>Duplicate course</span>
             </button>
           </div>
         </form>

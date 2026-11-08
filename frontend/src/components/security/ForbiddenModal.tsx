@@ -11,110 +11,41 @@ export const ForbiddenModal: React.FC<Props> = ({ violation, onClose }) => {
   if (!violation) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        backgroundColor: 'rgba(10, 10, 10, 0.4)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 9999,
-        padding: '1rem'
-      }}
-      className="animate-fade-in"
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <div
-        style={{
-          background: 'var(--color-background)',
-          border: '2px solid var(--color-accent-secondary)',
-          borderRadius: '12px',
-          width: '100%',
-          maxWidth: '480px',
-          padding: '2rem',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.18)',
-          textAlign: 'center',
-          position: 'relative'
-        }}
+        className="modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="forbidden-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '440px' }}
       >
         <button
           onClick={onClose}
-          style={{
-            position: 'absolute',
-            top: '1rem',
-            right: '1rem',
-            background: 'none',
-            border: 'none',
-            color: 'var(--color-muted-foreground)',
-            cursor: 'pointer'
-          }}
+          className="btn btn-ghost btn-sm btn-icon modal-close"
+          aria-label="Close"
         >
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </button>
 
-        <div
-          style={{
-            width: '56px',
-            height: '56px',
-            margin: '0 auto 1.25rem',
-            background: 'var(--pill-negative-bg)',
-            border: '2px solid var(--color-accent-secondary)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--color-accent-secondary)'
-          }}
-        >
-          <ShieldAlert size={28} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <ShieldAlert size={20} style={{ color: 'var(--negative)', flexShrink: 0 }} aria-hidden="true" />
+          <h2 id="forbidden-title" className="modal-title" style={{ margin: 0 }}>
+            Access restricted
+          </h2>
         </div>
 
-        <span
-          style={{
-            display: 'inline-block',
-            fontFamily: 'var(--font-display)',
-            fontSize: '0.74rem',
-            fontWeight: 700,
-            color: 'var(--color-accent-secondary)',
-            marginBottom: '0.75rem'
-          }}
-        >
-          RBAC Security Notice
-        </span>
-
-        <h3
-          style={{
-            fontFamily: 'var(--font-heading)',
-            fontSize: '1.5rem',
-            color: 'var(--color-accent-secondary)',
-            marginBottom: '0.5rem'
-          }}
-        >
-          403 Access Forbidden
-        </h3>
-
-        <p
-          style={{
-            fontFamily: 'var(--font-body)',
-            fontSize: '0.95rem',
-            color: 'var(--color-muted-foreground)',
-            marginBottom: '1.5rem',
-            lineHeight: 1.5
-          }}
-        >
-          Your active persona (<strong>{violation.currentRole}</strong>) lacks permission to access{' '}
-          <strong style={{ color: 'var(--color-foreground)' }}>{violation.resource}</strong>.
-          <br /><br />
-          Required authorization level: <span style={{ color: 'var(--color-accent-secondary)', fontWeight: 600 }}>{violation.requiredRole}</span>.
+        <p className="modal-desc" style={{ marginBottom: '20px' }}>
+          Your <strong>{violation.currentRole}</strong> account cannot access{' '}
+          <strong>{violation.resource}</strong>. Required role:{' '}
+          <strong>{violation.requiredRole}</strong>.
         </p>
 
-        <button
-          className="btn btn-primary"
-          style={{ width: '100%', padding: '0.75rem' }}
-          onClick={onClose}
-        >
-          Acknowledge & Return Safely
-        </button>
+        <div className="modal-actions">
+          <button className="btn btn-primary" onClick={onClose}>
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );

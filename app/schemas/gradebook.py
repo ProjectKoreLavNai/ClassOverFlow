@@ -30,9 +30,9 @@ class GradebookMarkInput(BaseModel):
 
 
 class GradebookSave(BaseModel):
-    session_date: date
-    attendance: list[AttendanceRecordInput]
-    marks: list[GradebookMarkInput]
+    session_date: date | None = None
+    attendance: list[AttendanceRecordInput] | None = None
+    marks: list[GradebookMarkInput] = Field(default_factory=list)
     delete_mark_ids: list[int] = Field(default_factory=list)
 
 

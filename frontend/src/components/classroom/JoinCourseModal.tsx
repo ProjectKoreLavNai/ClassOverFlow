@@ -149,50 +149,42 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
           <div
             style={{
-              width: '42px',
-              height: '42px',
-              borderRadius: '10px',
-              backgroundColor: 'rgba(122, 137, 115, 0.15)',
+              width: '40px',
+              height: '40px',
+              borderRadius: '8px',
+              backgroundColor: 'var(--raised)',
+              border: '1px solid var(--border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--color-accent-text)'
+              color: 'var(--text)'
             }}
           >
-            <KeyRound size={22} />
+            <KeyRound size={20} />
           </div>
           <div>
             <h2
               style={{
                 fontFamily: 'var(--font-heading)',
-                fontSize: '1.65rem',
+                fontSize: '1.5rem',
                 margin: 0,
-                color: 'var(--color-foreground)'
+                color: 'var(--text)'
               }}
             >
-              Join Academic Course
+              Join course
             </h2>
-            <span
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '0.75rem',
-                color: 'var(--color-muted-foreground)'
-              }}
-            >
-              Student Cohort Enrollment
-            </span>
           </div>
         </div>
 
         <p
           style={{
-            fontSize: '0.9rem',
-            color: 'var(--color-muted-foreground)',
-            margin: '0.75rem 0 1.5rem',
+            fontSize: '0.88rem',
+            color: 'var(--muted)',
+            margin: '0.5rem 0 1.25rem',
             lineHeight: 1.5
           }}
         >
-          Enter the <strong>Course Invitation ID</strong> (Class Code) provided by your professor or Class Representative (CR) to enroll in this semester's curriculum.
+          Enter the class code shared by your teacher to join the course.
         </p>
 
         {/* Feedback Alert */}
@@ -243,13 +235,13 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
               style={{
                 display: 'block',
                 fontFamily: 'var(--font-display)',
-                fontSize: '0.76rem',
-                fontWeight: 700,
-                color: 'var(--color-foreground)',
+                fontSize: '0.74rem',
+                fontWeight: 600,
+                color: 'var(--text)',
                 marginBottom: '0.45rem'
               }}
             >
-              Course Invitation ID / Class Code
+              Class code
             </label>
             <div style={{ position: 'relative' }}>
               <input
@@ -390,7 +382,7 @@ export const JoinCourseModal: React.FC<Props> = ({ isOpen, onClose, onJoined, in
                 marginBottom: '0.45rem'
               }}
             >
-              Sample class codes (development build)
+              Sample class codes
             </span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
               {activeSampleCodes.map((sample) => (

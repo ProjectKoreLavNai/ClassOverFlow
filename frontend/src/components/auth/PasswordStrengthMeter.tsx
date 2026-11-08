@@ -20,10 +20,10 @@ export const PasswordStrengthMeter: React.FC<Props> = ({ password }) => {
   };
 
   const getLabel = () => {
-    if (!password) return 'Min 8 chars, uppercase & numbers';
-    if (analysis.strength === 'weak') return 'Weak Entropy (Add uppercase or numbers)';
-    if (analysis.strength === 'medium') return 'Moderate Strength (Include special characters)';
-    return 'Strong Scholarly Passphrase';
+    if (!password) return 'At least 8 characters, with upper-case, lower-case and a number';
+    if (analysis.strength === 'weak') return 'Weak — add upper-case letters and a number';
+    if (analysis.strength === 'medium') return 'Good — add a symbol to make it stronger';
+    return 'Strong password';
   };
 
   return (
@@ -54,9 +54,8 @@ export const PasswordStrengthMeter: React.FC<Props> = ({ password }) => {
           }}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontFamily: 'var(--font-display)', color: 'var(--color-muted-foreground)' }}>
+      <div style={{ fontSize: '0.72rem', fontFamily: 'var(--font-display)', color: 'var(--color-muted-foreground)' }}>
         <span>{getLabel()}</span>
-        <span style={{ fontStyle: 'italic' }}>Chain of Resp. Gate 3</span>
       </div>
     </div>
   );

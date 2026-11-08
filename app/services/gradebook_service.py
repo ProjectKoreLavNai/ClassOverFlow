@@ -147,24 +147,33 @@ class GradebookService:
         session: AsyncSession | None,
     ) -> dict:
         GradebookService._require_teacher(user)
-        _reject_future_date(payload.session_date)
+        if payload.session_date is not None:
+            _reject_future_date(payload.session_date)
         repository = await GradebookService._get_owned_repository(course_id, user, session)
         expected_students = await repository.enrolled_student_ids(course_id)
-        attendance_ids = [record.student_id for record in payload.attendance]
-        if len(attendance_ids) != len(set(attendance_ids)) or set(attendance_ids) != expected_students:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Attendance must include exactly one status for every enrolled student",
-            )
+        if payload.attendance is not None:
+            if payload.session_date is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="session_date is required when saving attendance",
+                )
+            attendance_ids = [record.student_id for record in payload.attendance]
+            if len(attendance_ids) != len(set(attendance_ids)) or set(attendance_ids) != expected_students:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Attendance must include exactly one status for every enrolled student",
+                )
         if any(mark.student_id not in expected_students for mark in payload.marks):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Student is not enrolled in this course")
         try:
-            attendance_result = await SaveAttendanceCommand(
-                repository,
-                course_id,
-                payload.session_date,
-                [record.model_dump() for record in payload.attendance],
-            ).execute()
+            attendance_result = None
+            if payload.attendance is not None and payload.session_date is not None:
+                attendance_result = await SaveAttendanceCommand(
+                    repository,
+                    course_id,
+                    payload.session_date,
+                    [record.model_dump() for record in payload.attendance],
+                ).execute()
             for mark in payload.marks:
                 await UpdateMarkCommand(
                     repository,

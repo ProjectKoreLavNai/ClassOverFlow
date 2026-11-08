@@ -165,7 +165,7 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
           {DEMO_ENABLED && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <span className="field-label" style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
-                Demo accounts (development build)
+                Demo accounts
               </span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                 {DEMO_ACCOUNTS.map((demo) => (

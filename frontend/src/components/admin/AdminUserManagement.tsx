@@ -127,7 +127,7 @@ export const AdminUserManagement: React.FC = () => {
                   {user.isVerified ? (
                     <span className="status-chip chip-verified">Verified</span>
                   ) : (
-                    <span className="pill pill-warning">Waiting for verification</span>
+                    <span className="status-chip chip-unverified">Pending</span>
                   )}
                 </td>
 

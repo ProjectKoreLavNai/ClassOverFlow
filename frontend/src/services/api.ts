@@ -489,8 +489,8 @@ class ApiClient {
   public async saveGradebook(
     courseId: number,
     payload: {
-      session_date: string;
-      attendance: Array<{ student_id: number; status: 'PRESENT' | 'ABSENT' }>;
+      session_date?: string;
+      attendance?: Array<{ student_id: number; status: 'PRESENT' | 'ABSENT' }>;
       marks: Array<{
         mark_id?: number;
         student_id: number;
@@ -500,9 +500,9 @@ class ApiClient {
       }>;
       delete_mark_ids: number[];
     }
-  ): Promise<{ attendance: { session_id: number }; marks_saved: number; marks_deleted: number }> {
+  ): Promise<{ attendance: { session_id: number } | null; marks_saved: number; marks_deleted: number }> {
     const res = await this.request<{
-      data: { attendance: { session_id: number }; marks_saved: number; marks_deleted: number };
+      data: { attendance: { session_id: number } | null; marks_saved: number; marks_deleted: number };
     }>(`/api/v1/courses/${courseId}/gradebook`, {
       method: 'PUT',
       body: JSON.stringify(payload),

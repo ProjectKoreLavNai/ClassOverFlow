@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, RotateCcw, Sliders, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Plus, Trash2, RotateCcw } from 'lucide-react';
 import api from '../../services/api';
 
 export interface MarksDistributionItem {
@@ -183,35 +183,15 @@ export const MarksDistributionModal: React.FC<Props> = ({
           <X size={18} aria-hidden="true" />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-          <div
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '8px',
-              backgroundColor: 'var(--raised)',
-              border: '1px solid var(--border)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text)',
-            }}
-          >
-            <Sliders size={18} />
-          </div>
-          <div>
-            <h2 id="marks-dist-title" className="modal-title" style={{ margin: 0, fontSize: '1.25rem' }}>
-              Marks Distribution
-            </h2>
-            <p className="modal-sub" style={{ margin: 0, fontSize: '0.82rem' }}>
-              Customize assessment criteria and constrained marks for this course.
-            </p>
-          </div>
-        </div>
+        <h2 id="marks-dist-title" className="modal-title">
+          Marks distribution
+        </h2>
+        <p className="modal-desc">
+          Set the assessment categories and maximum marks for this course.
+        </p>
 
         {error && (
-          <p className="notice notice-negative" role="alert" style={{ marginBottom: '14px', fontSize: '0.85rem' }}>
-            <AlertCircle size={15} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
+          <p className="notice notice-negative" role="alert" style={{ marginBottom: '14px' }}>
             {error}
           </p>
         )}
@@ -221,7 +201,7 @@ export const MarksDistributionModal: React.FC<Props> = ({
           <div
             style={{
               padding: '10px 14px',
-              borderRadius: '6px',
+              borderRadius: 'var(--radius-control)',
               backgroundColor: 'var(--raised)',
               border: '1px solid var(--border)',
               fontSize: '0.82rem',
@@ -231,8 +211,8 @@ export const MarksDistributionModal: React.FC<Props> = ({
               gap: '12px',
             }}
           >
-            <span>
-              <strong>Default standard:</strong> Attendance (5), Assignment/presentation (5), CT (10), Mid term (20), Final (60).
+            <span className="muted">
+              Default: Attendance (5), Assignment/presentation (5), CT (10), Mid term (20), Final (60)
             </span>
             <button
               type="button"
@@ -241,8 +221,8 @@ export const MarksDistributionModal: React.FC<Props> = ({
               title="Reset to default distribution"
               style={{ fontSize: '0.78rem', height: '28px', padding: '0 8px', whiteSpace: 'nowrap' }}
             >
-              <RotateCcw size={13} style={{ marginRight: '4px' }} />
-              Reset
+              <RotateCcw size={13} aria-hidden="true" />
+              <span>Reset</span>
             </button>
           </div>
 
@@ -339,62 +319,34 @@ export const MarksDistributionModal: React.FC<Props> = ({
             type="button"
             className="btn btn-secondary btn-sm"
             onClick={handleAddItem}
-            style={{ alignSelf: 'flex-start', fontSize: '0.82rem' }}
+            style={{ alignSelf: 'flex-start' }}
           >
-            <Plus size={14} style={{ marginRight: '4px' }} />
-            Add Assessment Category
+            <Plus size={14} aria-hidden="true" />
+            <span>Add category</span>
           </button>
 
           {/* Total & Summary bar */}
           <div
             style={{
-              padding: '12px 14px',
-              borderTop: '1px solid var(--border)',
+              paddingTop: '12px',
+              borderTop: '1px solid var(--rule)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: 'var(--surface)',
-              borderRadius: '0 0 var(--radius-card) var(--radius-card)',
+              gap: '12px',
             }}
           >
-            <div>
-              <span style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>Total Marks: </span>
-              <strong
-                className="num"
-                style={{
-                  fontSize: '1.1rem',
-                  color: totalSum === 100 ? 'var(--positive)' : 'var(--text)',
-                }}
-              >
-                {totalSum} marks
-              </strong>
-              {totalSum === 100 ? (
-                <span
-                  style={{
-                    marginLeft: '8px',
-                    fontSize: '0.75rem',
-                    color: 'var(--positive)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '3px',
-                  }}
-                >
-                  <CheckCircle2 size={13} /> Balanced (100)
-                </span>
-              ) : (
-                <span
-                  style={{
-                    marginLeft: '8px',
-                    fontSize: '0.75rem',
-                    color: 'var(--warning)',
-                  }}
-                >
-                  (Standard total is 100)
+            <div className="num" style={{ fontSize: '0.88rem' }}>
+              <span className="muted">Total: </span>
+              <strong style={{ fontWeight: 600 }}>{totalSum} marks</strong>
+              {totalSum !== 100 && (
+                <span className="muted" style={{ marginLeft: '8px', fontSize: '0.78rem' }}>
+                  (standard total is 100)
                 </span>
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="modal-actions" style={{ marginTop: 0 }}>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
@@ -408,7 +360,7 @@ export const MarksDistributionModal: React.FC<Props> = ({
                 className="btn btn-primary btn-sm"
                 disabled={isSaving}
               >
-                {isSaving ? 'Saving…' : 'Save Distribution'}
+                {isSaving ? 'Saving…' : 'Save distribution'}
               </button>
             </div>
           </div>
