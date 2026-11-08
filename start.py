@@ -5,14 +5,18 @@ Runs both the FastAPI backend and Vite frontend concurrently with clean shutdown
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
 import time
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-VENV_PYTHON = os.path.join(ROOT_DIR, ".venv", "bin", "python3")
-UVICORN_BIN = os.path.join(ROOT_DIR, ".venv", "bin", "uvicorn")
+IS_WINDOWS = os.name == "nt"
+VENV_BIN_DIR = os.path.join(ROOT_DIR, ".venv", "Scripts" if IS_WINDOWS else "bin")
+VENV_PYTHON = os.path.join(VENV_BIN_DIR, "python.exe" if IS_WINDOWS else "python3")
+UVICORN_BIN = os.path.join(VENV_BIN_DIR, "uvicorn.exe" if IS_WINDOWS else "uvicorn")
+NPM_BIN = shutil.which("npm") or ("npm.cmd" if IS_WINDOWS else "npm")
 FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 
 processes = []
@@ -60,7 +64,7 @@ def main():
     # 2. Start Frontend (Vite)
     print("[Frontend] Starting Vite on http://localhost:5173 ...")
     frontend_proc = subprocess.Popen(
-        ["npm", "run", "dev"],
+        [NPM_BIN, "run", "dev"],
         cwd=FRONTEND_DIR,
     )
     processes.append(frontend_proc)
