@@ -122,61 +122,69 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
 
   const refreshCourseData = async () => {
     if (!course.courseId) return;
-    // Announcements load on their own, so a refusal there (e.g. an admin before the
-    // backend grants read-only moderation access) does not hide the rest of the course.
-    let announcementRows: BackendAnnouncement[] = [];
-    try {
-      announcementRows = await api.listAnnouncements(course.courseId);
-      setAnnouncementsError(null);
-    } catch (error) {
-      setAnnouncementsError(
-        error instanceof ApiError && error.status === 403
-          ? 'Announcements for this course are not available to your role.'
-          : error instanceof Error ? error.message : 'Unable to load announcements'
-      );
-    }
-    try {
-      const [upcomingRows, gradebookData] = await Promise.all([
-        api.listCourseUpcoming(course.courseId),
-        api.getGradebook(course.courseId),
-      ]);
-      const commentResults = await Promise.allSettled(
-        announcementRows.map(async (announcement) => [
-          Number(announcement.announcement_id),
-          await api.listComments(announcement.announcement_id),
-        ] as const)
-      );
-      const loadedComments: Record<number, BackendComment[]> = {};
-      let failedCommentRequests = false;
-      for (const result of commentResults) {
-        if (result.status === 'fulfilled') {
-          loadedComments[result.value[0]] = result.value[1];
-        } else {
-          failedCommentRequests = true;
+    const courseId = course.courseId;
+
+    // Start announcements, upcoming coursework, and gradebook in parallel instead of sequentially
+    const announcementsTask = (async () => {
+      try {
+        const announcementRows: BackendAnnouncement[] = await api.listAnnouncements(courseId);
+        setAnnouncementsError(null);
+        setAnnouncements(announcementRows.map((item) => ({
+          id: String(item.announcement_id),
+          courseCode: course.code,
+          authorName: item.author_email?.split('@')[0] || 'Teacher',
+          authorEmail: item.author_email,
+          authorRole: 'Teacher',
+          authorAvatar: getInitials(item.author_email?.split('@')[0] || 'Teacher'),
+          title: item.title,
+          content: item.content,
+          attachmentTag: '',
+          streamedToDiscord: false,
+          createdAt: item.created_at ? new Date(item.created_at).toLocaleString() : '',
+          likes: 0,
+        })));
+
+        const commentResults = await Promise.allSettled(
+          announcementRows.map(async (announcement) => [
+            Number(announcement.announcement_id),
+            await api.listComments(announcement.announcement_id),
+          ] as const)
+        );
+        const loadedComments: Record<number, BackendComment[]> = {};
+        let failedCommentRequests = false;
+        for (const result of commentResults) {
+          if (result.status === 'fulfilled') {
+            loadedComments[result.value[0]] = result.value[1];
+          } else {
+            failedCommentRequests = true;
+          }
         }
+        setCommentsByAnnouncement(loadedComments);
+        setCommentsError(failedCommentRequests ? 'Some announcement comments could not be loaded.' : null);
+      } catch (error) {
+        setAnnouncementsError(
+          error instanceof ApiError && error.status === 403
+            ? 'Announcements for this course are not available to your role.'
+            : error instanceof Error ? error.message : 'Unable to load announcements'
+        );
       }
-      setCommentsByAnnouncement(loadedComments);
-      setCommentsError(failedCommentRequests ? 'Some announcement comments could not be loaded.' : null);
-      setAnnouncements(announcementRows.map((item) => ({
-        id: String(item.announcement_id),
-        courseCode: course.code,
-        authorName: item.author_email?.split('@')[0] || 'Teacher',
-        authorEmail: item.author_email,
-        authorRole: 'Teacher',
-        authorAvatar: getInitials(item.author_email?.split('@')[0] || 'Teacher'),
-        title: item.title,
-        content: item.content,
-        attachmentTag: '',
-        streamedToDiscord: false,
-        createdAt: item.created_at ? new Date(item.created_at).toLocaleString() : '',
-        likes: 0,
-      })));
-      setUpcoming(upcomingRows);
-      setGradebook(gradebookData);
-      setDataError(null);
-    } catch (error) {
-      setDataError(error instanceof Error ? error.message : 'Unable to load course records');
-    }
+    })();
+
+    const recordsTask = (async () => {
+      try {
+        const [upcomingRows, gradebookData] = await Promise.all([
+          api.listCourseUpcoming(courseId),
+          api.getGradebook(courseId),
+        ]);
+        setUpcoming(upcomingRows);
+        setGradebook(gradebookData);
+        setDataError(null);
+      } catch (error) {
+        setDataError(error instanceof Error ? error.message : 'Unable to load course records');
+      }
+    })();
+
+    await Promise.all([announcementsTask, recordsTask]);
   };
 
   useEffect(() => {

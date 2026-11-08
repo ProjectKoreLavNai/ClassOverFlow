@@ -323,17 +323,22 @@ class CourseService:
         session: AsyncSession | None = None,
     ) -> dict:
         if session is not None:
-            course = await CourseRepository(session).get_by_id(course_id)
+            repo = CourseRepository(session)
+            if user["role"] in ("student", "cr"):
+                course, enrolled = await repo.get_by_id_with_enrollment(
+                    course_id,
+                    user["user_id"],
+                )
+                if course is not None and enrolled:
+                    return course
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access required")
+
+            course = await repo.get_by_id(course_id)
             if course is None:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access required")
             if user["role"] == "admin":
                 return course
             if user["role"] == "teacher" and course["teacher_id"] == user["user_id"]:
-                return course
-            if user["role"] in ("student", "cr") and await CourseRepository(session).is_enrolled(
-                course_id,
-                user["user_id"],
-            ):
                 return course
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course access required")
         course = CourseService._get_course(course_id)

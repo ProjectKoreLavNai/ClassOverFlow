@@ -34,6 +34,7 @@ export class ClassroomAcademicFacade {
   private publisher: CourseEventPublisher;
   private courses: CourseBlueprint[] = [];
   private announcements: CourseAnnouncement[] = [];
+  private syncPromise: Promise<void> | null = null;
 
   private constructor() {
     this.publisher = CourseEventPublisher.getInstance();
@@ -42,38 +43,48 @@ export class ClassroomAcademicFacade {
   }
 
   public async syncWithBackend(): Promise<void> {
-    const backendCourses = await api.listCourses();
-    const courseMembers = await Promise.all(
-      backendCourses.map((backendCourse) => api.listCourseMembers(backendCourse.course_id))
-    );
-    this.courses = backendCourses.map((backendCourse, index) => {
-      const members: EnrolledStudent[] = courseMembers[index].map((member) => ({
-        id: String(member.student_id),
-        name: member.full_name,
-        email: member.email,
-        avatar: member.full_name.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
-        joinedAt: member.enrolled_at ? new Date(member.enrolled_at).toLocaleDateString() : '',
-      }));
-      return new CourseBlueprint(
-        backendCourse.course_code,
-        `${backendCourse.course_code}: ${backendCourse.course_name}`,
-        backendCourse.teacher_name || backendCourse.teacher_email || 'Course teacher',
-        'Current term',
-        backendCourse.class_code || '',
-        '#eeeeee',
-        backendCourse.students_count ?? 0,
-        [],
-        { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
-        backendCourse.description || '',
-        '',
-        [],
-        backendCourse.created_at || new Date().toISOString(),
-        members,
-        backendCourse.course_id,
-        backendCourse.teacher_email
-      );
-    });
-    this.saveCoursesToStorage(this.courses);
+    if (this.syncPromise) {
+      return this.syncPromise;
+    }
+    this.syncPromise = (async () => {
+      try {
+        const backendCourses = await api.listCourses();
+        const courseMembers = await Promise.all(
+          backendCourses.map((backendCourse) => api.listCourseMembers(backendCourse.course_id))
+        );
+        this.courses = backendCourses.map((backendCourse, index) => {
+          const members: EnrolledStudent[] = courseMembers[index].map((member) => ({
+            id: String(member.student_id),
+            name: member.full_name,
+            email: member.email,
+            avatar: member.full_name.split(/\s+/).map((part) => part[0] || '').join('').slice(0, 2).toUpperCase(),
+            joinedAt: member.enrolled_at ? new Date(member.enrolled_at).toLocaleDateString() : '',
+          }));
+          return new CourseBlueprint(
+            backendCourse.course_code,
+            `${backendCourse.course_code}: ${backendCourse.course_name}`,
+            backendCourse.teacher_name || backendCourse.teacher_email || 'Course teacher',
+            'Current term',
+            backendCourse.class_code || '',
+            '#eeeeee',
+            backendCourse.students_count ?? 0,
+            [],
+            { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
+            backendCourse.description || '',
+            '',
+            [],
+            backendCourse.created_at || new Date().toISOString(),
+            members,
+            backendCourse.course_id,
+            backendCourse.teacher_email
+          );
+        });
+        this.saveCoursesToStorage(this.courses);
+      } finally {
+        this.syncPromise = null;
+      }
+    })();
+    return this.syncPromise;
   }
 
   public static getInstance(): ClassroomAcademicFacade {

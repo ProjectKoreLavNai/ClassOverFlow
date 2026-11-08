@@ -64,14 +64,15 @@ class GradebookRepository:
         mark_filter = " AND m.student_id = :student_id" if is_learner else ""
         learner_params = {"student_id": user["user_id"]} if is_learner else {}
 
-        held_result = await self.session.execute(
+        sessions_result = await self.session.execute(
             text(
-                "SELECT COUNT(*) FROM public.attendance_sessions "
-                "WHERE course_id = :course_id"
+                "SELECT session_id, session_date FROM public.attendance_sessions "
+                "WHERE course_id = :course_id ORDER BY session_date DESC, session_id DESC"
             ),
             {"course_id": course_id},
         )
-        classes_held = held_result.scalar_one()
+        session_rows = sessions_result.mappings().all()
+        classes_held = len(session_rows)
 
         students_result = await self.session.execute(
             text(
@@ -124,31 +125,39 @@ class GradebookRepository:
             if student is not None:
                 student["marks"].append(dict(mark))
 
-        sessions_result = await self.session.execute(
-            text(
-                "SELECT session_id, session_date FROM public.attendance_sessions "
-                "WHERE course_id = :course_id ORDER BY session_date DESC, session_id DESC"
-            ),
-            {"course_id": course_id},
-        )
-        sessions = []
-        for item in sessions_result.mappings().all():
-            record_result = await self.session.execute(
+        records_by_session: dict[int, list[dict]] = {
+            item["session_id"]: [] for item in session_rows
+        }
+        if session_rows:
+            records_result = await self.session.execute(
                 text(
-                    "SELECT student_id, status FROM public.attendance_records "
-                    "WHERE session_id = :session_id"
-                    + (" AND student_id = :student_id" if is_learner else "")
-                    + " ORDER BY student_id"
+                    "SELECT ar.session_id, ar.student_id, ar.status "
+                    "FROM public.attendance_records ar "
+                    "JOIN public.attendance_sessions ats ON ats.session_id = ar.session_id "
+                    "WHERE ats.course_id = :course_id"
+                    + (" AND ar.student_id = :student_id" if is_learner else "")
+                    + " ORDER BY ar.session_id, ar.student_id"
                 ),
-                {"session_id": item["session_id"], **learner_params},
+                {"course_id": course_id, **learner_params},
             )
-            sessions.append(
-                {
-                    "session_id": item["session_id"],
-                    "session_date": item["session_date"],
-                    "records": [dict(row) for row in record_result.mappings().all()],
-                }
-            )
+            for row in records_result.mappings().all():
+                bucket = records_by_session.get(row["session_id"])
+                if bucket is not None:
+                    bucket.append(
+                        {
+                            "student_id": row["student_id"],
+                            "status": row["status"],
+                        }
+                    )
+
+        sessions = [
+            {
+                "session_id": item["session_id"],
+                "session_date": item["session_date"],
+                "records": records_by_session.get(item["session_id"], []),
+            }
+            for item in session_rows
+        ]
 
         attended_total = sum(student["attended"] for student in students)
         total_possible = len(students) * classes_held

@@ -58,7 +58,10 @@ class AnnouncementCommentService:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement not found")
             course = await CourseService.require_course_access(announcement["course_id"], user, session)
             comments = AnnouncementCommentRepository(session)
-            is_enrolled = await comments.is_enrolled(announcement["course_id"], user["user_id"])
+            is_enrolled = user["role"] in ("student", "cr") or await comments.is_enrolled(
+                announcement["course_id"],
+                user["user_id"],
+            )
             if not AnnouncementCommentService._can_comment(user, course, is_enrolled):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course membership required to comment")
             comment = await comments.create(

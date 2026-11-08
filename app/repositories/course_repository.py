@@ -58,6 +58,29 @@ class CourseRepository:
         row = result.mappings().one_or_none()
         return dict(row) if row is not None else None
 
+    async def get_by_id_with_enrollment(
+        self,
+        course_id: int,
+        student_id: int,
+    ) -> tuple[dict | None, bool]:
+        result = await self.session.execute(
+            text(
+                f"SELECT {_COURSE_FIELDS}, "
+                "EXISTS ("
+                "SELECT 1 FROM public.enrollments e "
+                "WHERE e.course_id = c.course_id AND e.student_id = :student_id"
+                ") AS is_enrolled "
+                f"{_COURSE_FROM} WHERE c.course_id = :course_id"
+            ),
+            {"course_id": course_id, "student_id": student_id},
+        )
+        row = result.mappings().one_or_none()
+        if row is None:
+            return None, False
+        data = dict(row)
+        is_enrolled = bool(data.pop("is_enrolled", False))
+        return data, is_enrolled
+
     async def list_for_user(self, user: dict) -> list[dict]:
         if user["role"] == "admin":
             access_filter = ""

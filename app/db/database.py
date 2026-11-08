@@ -19,13 +19,17 @@ async def get_db_with_user_context(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Database access requires a valid user identity",
             )
-        await session.execute(
-            text(
-                "SELECT set_config('app.current_user_id', :uid, true), "
-                "set_config('app.current_user_role', :role, true)"
-            ),
-            {"uid": str(user_id), "role": role.upper()},
-        )
+        target_ctx = (user_id, role.upper())
+        if getattr(session, "info", {}).get("rls_context_set") != target_ctx:
+            await session.execute(
+                text(
+                    "SELECT set_config('app.current_user_id', :uid, true), "
+                    "set_config('app.current_user_role', :role, true)"
+                ),
+                {"uid": str(user_id), "role": role.upper()},
+            )
+            if hasattr(session, "info"):
+                session.info["rls_context_set"] = target_ctx
     yield session
 
 

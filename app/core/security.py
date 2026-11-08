@@ -78,10 +78,28 @@ async def ensure_token_not_revoked(payload: dict[str, Any], session: AsyncSessio
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked token")
         return
 
-    result = await session.execute(
-        text("SELECT EXISTS (SELECT 1 FROM public.token_revocations WHERE jti = :jti)"),
-        {"jti": token_id},
-    )
+    user_id = payload.get("uid")
+    role = payload.get("role")
+    if isinstance(user_id, int) and user_id >= 1 and isinstance(role, str) and role:
+        role_upper = role.upper()
+        result = await session.execute(
+            text(
+                "SELECT EXISTS ("
+                "SELECT 1 FROM public.token_revocations WHERE jti = :jti"
+                ") FROM ("
+                "SELECT set_config('app.current_user_id', :uid, true), "
+                "set_config('app.current_user_role', :role, true)"
+                ") AS _ctx"
+            ),
+            {"jti": token_id, "uid": str(user_id), "role": role_upper},
+        )
+        if hasattr(session, "info"):
+            session.info["rls_context_set"] = (user_id, role_upper)
+    else:
+        result = await session.execute(
+            text("SELECT EXISTS (SELECT 1 FROM public.token_revocations WHERE jti = :jti)"),
+            {"jti": token_id},
+        )
     if result.scalar_one():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked token")
 
