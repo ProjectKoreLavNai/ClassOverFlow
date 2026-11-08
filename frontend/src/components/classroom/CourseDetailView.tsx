@@ -398,14 +398,13 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const handleCopyCode = async () => {
     try {
       let classCode = course.cohortCode;
-      const generated = !classCode;
-      if (generated) {
-        if (!course.courseId) throw new Error('This course does not have a database ID');
+      if (!classCode && course.courseId) {
         const result = await api.generateCourseClassCode(course.courseId);
         classCode = result.class_code;
         course.cohortCode = classCode;
         onCourseUpdated(course);
       }
+      if (!classCode) throw new Error('Class code is not available for this course');
 
       try {
         await navigator.clipboard.writeText(classCode);
@@ -427,11 +426,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
       }
 
       setCopiedCode(true);
-      setClassCodeFeedback(
-        generated
-          ? 'New class code generated and copied. Any previous code has been replaced.'
-          : 'Class code copied.'
-      );
+      setClassCodeFeedback('Class code copied.');
       setTimeout(() => {
         setCopiedCode(false);
         setClassCodeFeedback(null);
@@ -728,10 +723,10 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                 <button
                   onClick={() => void handleCopyCode()}
                   className="btn btn-secondary btn-sm"
-                  aria-label={course.cohortCode ? `Copy class code ${course.cohortCode}` : 'Generate and copy class code'}
+                  aria-label={course.cohortCode ? `Copy class code ${course.cohortCode}` : 'Copy class code'}
                 >
                   {copiedCode ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-                  <span>{course.cohortCode ? 'Class code' : 'Generate class code'}</span>
+                  <span>Class code</span>
                   {course.cohortCode && <span className="mono" translate="no">{course.cohortCode}</span>}
                 </button>
                 <span aria-live="polite" role={classCodeFeedback && !copiedCode ? 'alert' : 'status'}>

@@ -8,7 +8,7 @@
  * Satisfies the strict ≤3-click usability requirement.
  */
 
-import { CourseBlueprint, type EnrolledStudent } from '../prototype/CoursePrototype';
+import { CourseBlueprint, generateRandomClassCode, type EnrolledStudent } from '../prototype/CoursePrototype';
 import { CourseEventPublisher, type AcademicEvent } from '../observer/CourseEventPublisher';
 import { SecurityBouncerProxy } from '../proxy/SecurityBouncerProxy';
 import type { IUserSession } from '../../types/auth';
@@ -303,12 +303,13 @@ export class ClassroomAcademicFacade {
       return { success: false, message: 'Faculty privileges required to create courses.' };
     }
 
+    const normalizedCode = code.toUpperCase().trim();
     const newCourse = new CourseBlueprint(
-      code.toUpperCase().trim(),
+      normalizedCode,
       title.trim(),
       session.name,
       term.trim(),
-      `CO-${Math.floor(1000 + Math.random() * 9000)}`,
+      generateRandomClassCode(normalizedCode),
       '#eeeeee',
       0,
       [

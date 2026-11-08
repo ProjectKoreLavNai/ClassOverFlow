@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _COURSE_FIELDS = """
     c.course_id, c.teacher_id, c.course_name, c.course_code,
-    c.description, c.syllabus, t.email AS teacher_email, t.full_name AS teacher_name,
+    c.description, c.syllabus, c.created_at, t.email AS teacher_email, t.full_name AS teacher_name,
     (SELECT COUNT(*) FROM public.enrollments e WHERE e.course_id = c.course_id) AS students_count
 """
 _COURSE_FROM = """

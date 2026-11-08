@@ -11,6 +11,24 @@ export interface ICloneable<T> {
   clone(): T;
 }
 
+const SEEDED_CLASS_CODES: Record<string, string> = {
+  'cse-3101': 'd3b1-cse3101',
+  'cse-3102': 'c7x9-cse3102',
+  'cse-3104': 'os50-cse3104',
+  'cse-3106': 'ml78-cse3106',
+};
+
+export function generateRandomClassCode(courseCode?: string): string {
+  const normalized = (courseCode || '').trim().toLowerCase();
+  if (SEEDED_CLASS_CODES[normalized]) {
+    return SEEDED_CLASS_CODES[normalized];
+  }
+  const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_';
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('');
+}
+
 export interface SyllabusTopic {
   id: string;
   title: string;
@@ -110,7 +128,7 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
       this.title,
       this.instructor,
       this.term,
-      `CO-${Math.floor(1000 + Math.random() * 9000)}`, // New cohort join code
+      generateRandomClassCode(), // Generated randomly once at creation and then fixed
       this.bannerBg,
       0, // Reset enrolled students count
       clonedUnits,
@@ -131,7 +149,10 @@ export class CourseBlueprint implements ICloneable<CourseBlueprint> {
    */
   public cloneForNewCohort(newCohortTitle: string, newTerm: string, newCode?: string): CourseBlueprint {
     const clone = this.clone();
-    if (newCode) clone.code = newCode;
+    if (newCode) {
+      clone.code = newCode;
+      clone.cohortCode = generateRandomClassCode(newCode);
+    }
     clone.title = newCohortTitle;
     clone.term = newTerm;
     clone.instructorEmail = this.instructorEmail;

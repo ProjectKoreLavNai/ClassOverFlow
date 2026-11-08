@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import secrets
 
 from fastapi import HTTPException, status
@@ -11,12 +14,52 @@ from app.repositories.course_repository import CourseRepository
 from app.repositories.in_memory_store import InMemoryStore
 from app.schemas.course import CourseCreate, CourseUpdate
 
+SEEDED_CLASS_CODES: dict[str, str] = {
+    "cse-3101": "d3b1-cse3101",
+    "cse-3102": "c7x9-cse3102",
+    "cse-3104": "os50-cse3104",
+    "cse-3106": "ml78-cse3106",
+}
+_synced_course_codes: set[int] = set()
+
 
 class CourseService:
     @staticmethod
+    def get_course_class_code(course: dict) -> str:
+        normalized = (course.get("course_code") or "").strip().lower()
+        if normalized in SEEDED_CLASS_CODES:
+            return SEEDED_CLASS_CODES[normalized]
+        created_at = course.get("created_at")
+        created_iso = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at or "")
+        seed = f"{course.get('course_id')}:{normalized}:{created_iso}"
+        digest = hmac.new(
+            b"classoverflow-course-class-code-v1",
+            seed.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+        return base64.urlsafe_b64encode(digest[:9]).decode("ascii")
+
+    @staticmethod
     async def list_courses(user: dict, session: AsyncSession | None = None) -> list[dict]:
         if session is not None:
-            return await CourseRepository(session).list_for_user(user)
+            repository = CourseRepository(session)
+            courses = await repository.list_for_user(user)
+            if user["role"] in ("teacher", "admin"):
+                dirty = False
+                for course in courses:
+                    fixed_code = CourseService.get_course_class_code(course)
+                    course["class_code"] = fixed_code
+                    cid = course["course_id"]
+                    if cid not in _synced_course_codes:
+                        matched = await repository.find_by_class_code(fixed_code)
+                        if matched != cid:
+                            code_hash = await repository.hash_class_code(fixed_code)
+                            await repository.update_class_code_hash(cid, code_hash)
+                            dirty = True
+                        _synced_course_codes.add(cid)
+                if dirty:
+                    await session.commit()
+            return courses
         return [
             CourseService._serialize(course, user)
             for course in InMemoryStore.courses.values()
@@ -47,23 +90,27 @@ class CourseService:
             if await repository.course_code_exists(payload.course_code):
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Course code already exists")
 
-            class_code = secrets.token_urlsafe(9)
-            class_code_hash = await repository.hash_class_code(class_code)
+            temp_code = secrets.token_urlsafe(9)
+            placeholder_hash = await repository.hash_class_code(temp_code)
             try:
                 course = await repository.create(
                     course_name=payload.course_name,
                     course_code=payload.course_code,
                     description=payload.description,
                     syllabus=payload.syllabus,
-                    class_code_hash=class_code_hash,
+                    class_code_hash=placeholder_hash,
                     teacher_id=teacher_id,
                 )
+                class_code = CourseService.get_course_class_code(course)
+                class_code_hash = await repository.hash_class_code(class_code)
+                await repository.update_class_code_hash(course["course_id"], class_code_hash)
                 await session.commit()
             except IntegrityError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Course code already exists or course data violates a database constraint",
                 ) from exc
+            _synced_course_codes.add(course["course_id"])
             course["class_code"] = class_code
             return course
 
@@ -127,27 +174,25 @@ class CourseService:
             if user["role"] != "teacher" or course["teacher_id"] != user["user_id"]:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Course owner access required")
 
-            class_code = secrets.token_urlsafe(9)
-            class_code_hash = await repository.hash_class_code(class_code)
-            await repository.update_class_code_hash(course_id, class_code_hash)
-            await session.commit()
+            class_code = CourseService.get_course_class_code(course)
+            if course_id not in _synced_course_codes:
+                class_code_hash = await repository.hash_class_code(class_code)
+                await repository.update_class_code_hash(course_id, class_code_hash)
+                await session.commit()
+                _synced_course_codes.add(course_id)
             return {"class_code": class_code}
 
         course = CourseService._get_course(course_id)
         CourseService._require_owner(course, user)
-        class_code = secrets.token_urlsafe(9)
-        while any(
-            other_id != course_id and other.get("class_code") == class_code
-            for other_id, other in InMemoryStore.courses.items()
-        ):
-            class_code = secrets.token_urlsafe(9)
-        course["class_code"] = class_code
-        return {"class_code": class_code}
+        return {"class_code": course["class_code"]}
 
     @staticmethod
     async def get_course(course_id: int, user: dict, session: AsyncSession | None = None) -> dict:
         if session is not None:
-            return await CourseService.require_course_access(course_id, user, session)
+            course = await CourseService.require_course_access(course_id, user, session)
+            if user["role"] in ("teacher", "admin"):
+                course["class_code"] = CourseService.get_course_class_code(course)
+            return course
         course = CourseService._get_course(course_id)
         CourseService._require_access(course, user)
         return CourseService._serialize(course, user)
