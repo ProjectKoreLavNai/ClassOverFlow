@@ -137,6 +137,27 @@ const parseRetryAfter = (value: string | null): number | null => {
   return Number.isNaN(date) ? null : Math.max(1, Math.ceil((date - Date.now()) / 1000));
 };
 
+/**
+ * Turns FastAPI/Pydantic 422 errors into readable text. Validation rules live in the
+ * backend only, so this is how the user learns what to fix.
+ *   {loc: ['body','password'], msg: 'String should have at least 8 characters'}
+ *     -> 'Password: String should have at least 8 characters'
+ *   {loc: ['body'], msg: 'Value error, Passwords do not match'} -> 'Passwords do not match'
+ */
+const formatValidationErrors = (errors: Array<{ loc?: unknown[]; msg?: string }>): string => {
+  const messages = errors.map((error) => {
+    const msg = String(error.msg ?? '');
+    if (msg.startsWith('Value error, ')) return msg.slice('Value error, '.length);
+    const field = [...(error.loc ?? [])]
+      .reverse()
+      .find((part): part is string => typeof part === 'string' && part !== 'body');
+    if (!field) return msg;
+    const label = field.replace(/_/g, ' ');
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)}: ${msg}`;
+  });
+  return [...new Set(messages)].join('. ');
+};
+
 /*
  * Token storage (security gap: "Safe browser session and credential storage").
  * Tokens are held in memory and mirrored to sessionStorage only, so they are
@@ -242,12 +263,10 @@ class ApiClient {
             retryAfter
           );
         }
-        const detail = Array.isArray(data.detail)
-          ? data.detail.map((e: any) => e.msg).join(', ')
-          : data.detail;
+        const detail = Array.isArray(data.detail) ? formatValidationErrors(data.detail) : data.detail;
         const errorMessage =
           detail ||
-          (Array.isArray(data.error) ? data.error.map((e: any) => e.msg).join(', ') : data.error) ||
+          (Array.isArray(data.error) ? formatValidationErrors(data.error) : data.error) ||
           response.statusText ||
           'API Request Failed';
         throw new ApiError(errorMessage, response.status, data);
@@ -286,17 +305,13 @@ class ApiClient {
     password: string;
     phone?: string;
     role: string;
-    username?: string;
+    username: string;
   }): Promise<BackendUser> {
-    const username =
-      payload.username ||
-      payload.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') ||
-      `user_${Date.now()}`;
     const res = await this.request<{ data: BackendUser }>('/api/v1/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         full_name: payload.fullName,
-        username: username.length < 3 ? `${username}_usr` : username,
+        username: payload.username,
         email: payload.email,
         password: payload.password,
         role: payload.role.toLowerCase(),

@@ -1,7 +1,5 @@
 import type { AcademicRole, AcademicUser, FilterResult, IUserSession, SecurityRequest } from '../../types/auth';
 import {
-  InstitutionalEmailFilter,
-  PasswordStrengthFilter,
   PhoneAndRollFilter,
   RateLimitFilter,
   SecurityFilter
@@ -43,25 +41,19 @@ export class AuthSessionManager {
   private currentSession: IUserSession | null = null;
   private listeners: AuthListener[] = [];
 
-  // Chain of Responsibility Pipeline
+  // Chain of Responsibility Pipeline. Email format and password rules are not
+  // checked here: the backend validates them and its error is shown as-is.
   private rateLimiter: RateLimitFilter;
-  private emailFilter: InstitutionalEmailFilter;
-  private passwordFilter: PasswordStrengthFilter;
   private phoneFilter: PhoneAndRollFilter;
   private pipeline: SecurityFilter;
 
   private constructor() {
     this.rateLimiter = new RateLimitFilter();
-    this.emailFilter = new InstitutionalEmailFilter();
-    this.passwordFilter = new PasswordStrengthFilter();
     this.phoneFilter = new PhoneAndRollFilter();
 
-    // Link pipeline: RateLimit -> Email -> Password -> Phone & Roll
+    // Link pipeline: RateLimit -> Phone & Roll
     this.pipeline = this.rateLimiter;
-    this.rateLimiter
-      .setNext(this.emailFilter)
-      .setNext(this.passwordFilter)
-      .setNext(this.phoneFilter);
+    this.rateLimiter.setNext(this.phoneFilter);
 
     this.currentSession = this.restoreSession();
   }
@@ -237,7 +229,7 @@ export class AuthSessionManager {
    */
   public async register(data: {
     fullName: string;
-    username?: string;
+    username: string;
     email: string;
     password: string;
     phone?: string;
@@ -350,19 +342,17 @@ export class AuthSessionManager {
    */
   public async resetPassword(
     email: string,
-    newPassword: string
+    newPassword: string,
+    confirmPassword: string
   ): Promise<{ success: boolean; message: string; retryAfter?: number }> {
     const cleanEmail = (email || '').trim().toLowerCase();
 
-    if (newPassword.length < 8) {
-      return { success: false, message: 'Password must be at least 8 characters long.' };
-    }
-
+    // Password length, character mix and the confirm match are checked by the backend.
     try {
       await api.resetPassword({
         email: cleanEmail,
         new_password: newPassword,
-        confirm_password: newPassword,
+        confirm_password: confirmPassword,
       });
       return { success: true, message: 'Password updated. Sign in with your new password.' };
     } catch (err) {

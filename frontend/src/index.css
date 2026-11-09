@@ -616,6 +616,13 @@ input, select, textarea {
   color: var(--muted);
 }
 
+.password-hint {
+  margin-top: -4px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
 .input,
 .select,
 .textarea {

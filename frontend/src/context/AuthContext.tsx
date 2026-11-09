@@ -15,7 +15,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<AuthResult>;
   register: (data: {
     fullName: string;
-    username?: string;
+    username: string;
     email: string;
     password: string;
     phone?: string;
@@ -26,7 +26,7 @@ interface AuthContextValue {
   /** Development only: signs in as a seeded demo account. Fails in production builds. */
   switchPersona: (role: AcademicRole) => Promise<AuthResult>;
   verifyResetEmail: (email: string) => Promise<{ success: boolean; message?: string; retryAfter?: number }>;
-  resetPassword: (email: string, newPassword: string) => Promise<{ success: boolean; message: string; retryAfter?: number }>;
+  resetPassword: (email: string, newPassword: string, confirmPassword: string) => Promise<{ success: boolean; message: string; retryAfter?: number }>;
   setViolation: (check: SecurityCheckResult) => void;
   clearViolation: () => void;
 }
@@ -100,7 +100,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const clearViolation = () => setSecurityViolation(null);
 
   const verifyResetEmail = (email: string) => authManager.verifyResetEmail(email);
-  const resetPassword = (email: string, newPassword: string) => authManager.resetPassword(email, newPassword);
+  const resetPassword = (email: string, newPassword: string, confirmPassword: string) =>
+    authManager.resetPassword(email, newPassword, confirmPassword);
 
   return (
     <AuthContext.Provider

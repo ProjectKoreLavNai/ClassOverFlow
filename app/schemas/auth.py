@@ -7,7 +7,7 @@ class UserRegister(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=100)
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr = Field(..., max_length=150)
-    password: str = Field(..., min_length=12, max_length=72)
+    password: str = Field(..., min_length=8, max_length=72)
     role: Literal["student", "teacher"] = "student"
     phone: str | None = Field(default=None, max_length=20)
 

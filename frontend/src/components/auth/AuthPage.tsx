@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Eye, EyeOff, ArrowRight, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import type { AcademicRole, FilterResult } from '../../types/auth';
-import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 import { BrandMark } from '../layout/BrandMark';
 import { getPersonTint } from '../../utils/courseTheme';
 import { ForgotPasswordForm } from './ForgotPasswordForm';
@@ -303,7 +302,7 @@ export const AuthPage: React.FC = () => {
                     </label>
                     <label className="field">
                       <span className="field-label">Username</span>
-                      <input className="input" type="text" name="username" autoComplete="username" spellCheck={false} value={regUsername} onChange={(e) => setRegUsername(e.target.value)} placeholder="e.g. ayanokoji_14…" minLength={3} maxLength={50} required />
+                      <input className="input" type="text" name="username" autoComplete="username" spellCheck={false} value={regUsername} onChange={(e) => setRegUsername(e.target.value)} placeholder="e.g. ayanokoji_14…" required />
                     </label>
                   </div>
 
@@ -359,9 +358,9 @@ export const AuthPage: React.FC = () => {
                     </label>
                   </div>
 
-                  <div id="password-rules">
-                    <PasswordStrengthMeter password={regPassword} />
-                  </div>
+                  <p id="password-rules" className="password-hint">
+                    At least 8 characters, with upper-case, lower-case and a number
+                  </p>
 
                   <button type="submit" disabled={isSubmitting || retry.isWaiting} className="btn btn-primary" style={{ width: '100%', height: '40px' }}>
                     <span>{retry.isWaiting ? waitLabel : isSubmitting ? 'Creating account…' : 'Create account'}</span>

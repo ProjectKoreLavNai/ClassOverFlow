@@ -8,8 +8,8 @@
  * Satisfies the strict ≤3-click usability requirement.
  */
 
-import { CourseBlueprint, generateRandomClassCode, type EnrolledStudent } from '../prototype/CoursePrototype';
-import { CourseEventPublisher, type AcademicEvent } from '../observer/CourseEventPublisher';
+import { CourseBlueprint, type EnrolledStudent } from '../prototype/CoursePrototype';
+import { CourseEventPublisher } from '../observer/CourseEventPublisher';
 import { SecurityBouncerProxy } from '../proxy/SecurityBouncerProxy';
 import type { IUserSession } from '../../types/auth';
 import api from '../../services/api';
@@ -152,94 +152,7 @@ export class ClassroomAcademicFacade {
   // ================= FACADE HIGH-LEVEL UNIFIED OPERATIONS =================
 
   /**
-   * Facade Method 1: Publish Announcement
-   * Behind a single call, coordinates:
-   * 1. Persistence to course feed
-   * 2. Publishing AcademicEvent to Observer Pattern bus
-   * 3. In-App subscriber notification
-   * 4. Discord Webhook embed dispatch
-   * 5. Security audit ledger logging
-   */
-  public publishAnnouncement(
-    courseCode: string,
-    title: string,
-    content: string,
-    session: IUserSession,
-    streamToDiscord: boolean = true,
-    attachmentTag: string = 'General Academic'
-  ): { success: boolean; message: string; announcement?: CourseAnnouncement } {
-    if (!title.trim() || !content.trim()) {
-      return { success: false, message: 'Announcement title and content cannot be empty.' };
-    }
-
-    if (!this.canUserPostAnnouncement(courseCode, session)) {
-      return {
-        success: false,
-        message: session.role === 'student'
-          ? 'Students do not have authority to post announcements. Only Teachers and Class Representatives (CR) can post.'
-          : 'You do not have authority to post announcements in this course.'
-      };
-    }
-
-    const newAnnouncement: CourseAnnouncement = {
-      id: `ann-${Date.now()}`,
-      courseCode,
-      authorName: session.name,
-      authorRole: session.getRoleLabel(),
-      authorAvatar: session.avatar,
-      title: title.trim(),
-      content: content.trim(),
-      attachmentTag,
-      streamedToDiscord: streamToDiscord,
-      createdAt: 'Just now',
-      likes: 0
-    };
-
-    this.announcements.unshift(newAnnouncement);
-    this.saveAnnouncementsToStorage(this.announcements);
-
-    // Sync to Backend API
-    (async () => {
-      try {
-        const course = this.getCourseByCode(courseCode);
-        const courseId = course ? (this.courses.indexOf(course) + 1) : 1;
-        await api.createAnnouncement(courseId, {
-          title: title.trim(),
-          content: content.trim()
-        });
-      } catch (e) {
-        console.warn('Backend announcement sync notification:', e);
-      }
-    })();
-
-    // Notify Observer Pattern Bus
-    const event: AcademicEvent = {
-      id: `evt-${Date.now()}`,
-      type: 'ANNOUNCEMENT_POSTED',
-      courseCode,
-      actor: session.name,
-      actorRole: session.getRoleLabel(),
-      payload: {
-        title,
-        content,
-        streamToDiscord,
-        attachmentTag
-      },
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    this.publisher.notify(event);
-
-    return {
-      success: true,
-      message: streamToDiscord
-        ? `Announcement posted & streamed to Discord #${courseCode.toLowerCase().replace(/[^a-z0-9]/g, '')}-announcements!`
-        : 'Announcement published to course stream.',
-      announcement: newAnnouncement
-    };
-  }
-
-  /**
-   * Facade Method 2: Clone Course via Prototype Pattern
+   * Facade Method: Clone Course via Prototype Pattern
    * Duplicates an existing course with all its curriculum units and topics,
    * resets completed checkboxes to 0%, assigns new term/code in <150ms.
    */
@@ -289,87 +202,6 @@ export class ClassroomAcademicFacade {
     };
   }
 
-  /**
-   * Facade Method 3: Create Fresh Course
-   */
-  public createCourse(
-    code: string,
-    title: string,
-    term: string,
-    session: IUserSession
-  ): { success: boolean; message: string; course?: CourseBlueprint } {
-    const check = SecurityBouncerProxy.inspectAction('create_course', session);
-    if (!check.allowed) {
-      return { success: false, message: 'Faculty privileges required to create courses.' };
-    }
-
-    const normalizedCode = code.toUpperCase().trim();
-    const newCourse = new CourseBlueprint(
-      normalizedCode,
-      title.trim(),
-      session.name,
-      term.trim(),
-      generateRandomClassCode(normalizedCode),
-      '#eeeeee',
-      0,
-      [
-        {
-          unitNumber: 1,
-          title: 'Introductory Fundamentals & Overview',
-          topics: [
-            {
-              id: `top-${Date.now()}`,
-              title: 'Course Introduction & Learning Outcomes',
-              durationHours: 3,
-              learningObjectives: ['Understand course milestones', 'Setup development toolchain'],
-              isCompleted: false
-            }
-          ]
-        }
-      ],
-      { quizzes: 20, assignments: 30, attendance: 10, finalExam: 40 },
-      'Section A • Room 402 • 3.0 Credits',
-      'No pending submissions yet',
-      ['AI Assisted'],
-      new Date().toISOString(),
-      [],
-      undefined,
-      session.email
-    );
-
-    this.courses.unshift(newCourse);
-    this.saveCoursesToStorage(this.courses);
-
-    // Sync to Backend API
-    (async () => {
-      try {
-        await api.createCourse({
-          course_name: newCourse.title,
-          course_code: newCourse.code,
-          description: newCourse.sectionInfo || 'Academic Course',
-          syllabus: 'Unit 1: Introductory Fundamentals & Overview',
-        });
-      } catch (e) {
-        console.warn('Backend course creation sync notification:', e);
-      }
-    })();
-
-    this.publisher.notify({
-      id: `evt-create-${Date.now()}`,
-      type: 'COURSE_CREATED',
-      courseCode: newCourse.code,
-      actor: session.name,
-      actorRole: session.getRoleLabel(),
-      payload: {
-        title: newCourse.title,
-        content: `Course created for ${newCourse.term}. Cohort Code: ${newCourse.cohortCode}`
-      },
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
-
-    return { success: true, message: 'New course created successfully!', course: newCourse };
-  }
-
   public getCourses(): CourseBlueprint[] {
     return [...this.courses];
   }
@@ -405,120 +237,6 @@ export class ClassroomAcademicFacade {
     }
   }
 
-  /**
-   * Facade Method 4: Join Course via Matched Course Invitation ID / Class Code
-   * Matches course cohortCode (or course code), validates student permissions,
-   * adds student to enrolled roster, updates cohort count, and emits Academic Event.
-   */
-  public joinCourseByInvitationId(
-    invitationId: string,
-    session: IUserSession
-  ): { success: boolean; message: string; course?: CourseBlueprint; alreadyEnrolled?: boolean } {
-    const check = SecurityBouncerProxy.inspectAction('join_course', session);
-    if (!check.allowed) {
-      return {
-        success: false,
-        message: check.violation?.resource
-          ? `${check.violation.resource}: ${check.violation.requiredRole}`
-          : 'Unauthorized action'
-      };
-    }
-
-    const cleanInput = (invitationId || '').trim().toLowerCase();
-    if (!cleanInput) {
-      return { success: false, message: 'Please enter a valid Course Invitation ID.' };
-    }
-
-    // Match against cohortCode (case-insensitive) or course code
-    const course = this.courses.find(
-      (c) => c.cohortCode.trim().toLowerCase() === cleanInput || c.code.trim().toLowerCase() === cleanInput
-    );
-
-    if (!course) {
-      return {
-        success: false,
-        message: `No active academic course found matching invitation ID "${invitationId}". Please check the code with your instructor or CR.`
-      };
-    }
-
-    // If teacher is the creator of the course, prevent redundant join
-    if (session.role === 'teacher' && this.isTeacherCreator(course, session)) {
-      return {
-        success: false,
-        alreadyEnrolled: true,
-        course,
-        message: `You are already the primary instructor and creator of ${course.code}.`
-      };
-    }
-
-    // Ensure enrolled roster array is initialized
-    if (!course.enrolledStudents) {
-      course.enrolledStudents = [];
-    }
-
-    // Check if already enrolled/joined in this course
-    const isEnrolled = course.enrolledStudents.some(
-      (s) => s.email.toLowerCase() === session.email.toLowerCase() || s.id === session.id
-    );
-
-    if (isEnrolled) {
-      return {
-        success: false,
-        alreadyEnrolled: true,
-        course,
-        message: session.role === 'teacher'
-          ? `You have already joined ${course.code}: ${course.title}.`
-          : `You are already enrolled in ${course.code}: ${course.title}.`
-      };
-    }
-
-    // Enroll user in course blueprint (as faculty or student)
-    const newStudent: EnrolledStudent = {
-      id: session.id,
-      name: session.name,
-      email: session.email,
-      roll: session.roll || (session.role === 'teacher' ? 'Faculty' : 'N/A'),
-      avatar: session.avatar,
-      joinedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    };
-
-    course.enrolledStudents.unshift(newStudent);
-    course.studentsCount = Math.max((course.studentsCount || 0) + 1, course.enrolledStudents.length);
-    this.saveCoursesToStorage(this.courses);
-
-    // Sync to Backend API
-    (async () => {
-      try {
-        await api.joinCourse(course.cohortCode || cleanInput);
-      } catch (e) {
-        console.warn('Backend course join sync notification:', e);
-      }
-    })();
-
-    // Observer Pattern: Publish academic event & update audit/notification logs
-    this.publisher.notify({
-      id: `evt-join-${Date.now()}`,
-      type: 'STUDENT_ENROLLED',
-      courseCode: course.code,
-      actor: session.name,
-      actorRole: session.getRoleLabel(),
-      payload: {
-        title: `Course Enrollment: ${course.code}`,
-        content: `${session.name} (${session.email}) joined ${course.title} using invitation ID: ${course.cohortCode}`,
-        extra: { invitationId: course.cohortCode, studentEmail: session.email }
-      },
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
-
-    return {
-      success: true,
-      message: session.role === 'teacher'
-        ? `Successfully joined ${course.code}: ${course.title} as teacher! You can now post announcements.`
-        : `Successfully joined ${course.code}: ${course.title}!`,
-      course
-    };
-  }
-
   public isTeacherCreator(course: CourseBlueprint, session: IUserSession): boolean {
     if (!session) return false;
     if (course.instructorEmail && session.email) {
@@ -537,59 +255,6 @@ export class ClassroomAcademicFacade {
     return course.enrolledStudents.some(
       (s) => s.email.toLowerCase() === query || s.id.toLowerCase() === query
     );
-  }
-
-  public getEnrolledCoursesForStudent(studentEmailOrId: string): CourseBlueprint[] {
-    if (!studentEmailOrId) return [];
-    const query = studentEmailOrId.toLowerCase();
-    return this.courses.filter(
-      (c) => (c.enrolledStudents || []).some(
-        (s) => s.email.toLowerCase() === query || s.id.toLowerCase() === query
-      )
-    );
-  }
-
-  public getCoursesForTeacher(session: IUserSession): CourseBlueprint[] {
-    if (!session) return [];
-    return this.courses.filter((c) => {
-      const isCreator = this.isTeacherCreator(c, session);
-      const hasJoined = (c.enrolledStudents || []).some(
-        (s) => s.email.toLowerCase() === session.email.toLowerCase() || s.id === session.id
-      );
-      return isCreator || hasJoined;
-    });
-  }
-
-  public getCoursesForUser(session: IUserSession | null): CourseBlueprint[] {
-    if (!session) return [];
-    if (session.role === 'student' || session.role === 'cr') {
-      return this.getEnrolledCoursesForStudent(session.email);
-    }
-    if (session.role === 'teacher') {
-      return this.getCoursesForTeacher(session);
-    }
-    return [...this.courses];
-  }
-
-  public canUserAccessCourse(courseCode: string, session: IUserSession | null): boolean {
-    if (!session) return false;
-    if (session.role === 'admin') return true;
-    const course = this.getCourseByCode(courseCode);
-    if (!course) return false;
-    if (session.role === 'teacher') {
-      return this.isTeacherCreator(course, session) || this.isStudentEnrolled(courseCode, session.email);
-    }
-    return this.isStudentEnrolled(courseCode, session.email);
-  }
-
-  public canUserPostAnnouncement(courseCode: string, session: IUserSession | null): boolean {
-    if (!session) return false;
-    const course = this.getCourseByCode(courseCode);
-    if (!course) return false;
-
-    // Access-control matrix: only the course's assigned teacher posts official
-    // announcements. CRs and students read and comment; admins have read-only access.
-    return session.role === 'teacher' && this.isTeacherCreator(course, session);
   }
 
   public getCourseByInvitationId(invitationId: string): CourseBlueprint | undefined {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Mail, CheckCircle2, ShieldAlert, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 import { DEMO_ACCOUNTS, DEMO_ENABLED } from '../../config/demoAccounts';
 import { useRetryCountdown } from '../../utils/useRetryCountdown';
 
@@ -82,11 +81,6 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
       emailInputRef.current?.focus();
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-      setEmailError('Enter a valid email address, for example name@university.edu.');
-      emailInputRef.current?.focus();
-      return;
-    }
 
     setIsSubmitting(true);
     try {
@@ -105,24 +99,10 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
     setError(null);
     setPasswordError(null);
 
-    if (newPassword.length < 8) {
-      setPasswordError('Use at least 8 characters.');
-      passwordInputRef.current?.focus();
-      return;
-    }
-    if (!/[a-z]/.test(newPassword) || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
-      setPasswordError('Include upper-case letters, lower-case letters and a number.');
-      passwordInputRef.current?.focus();
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('The two passwords do not match.');
-      return;
-    }
-
+    // Length, character mix and the confirm match are validated by the backend.
     setIsSubmitting(true);
     try {
-      const res = await resetPassword(cleanEmail, newPassword);
+      const res = await resetPassword(cleanEmail, newPassword, confirmPassword);
       if (res.success) {
         // Drop the password from memory as soon as it has been sent.
         setNewPassword('');
@@ -304,9 +284,9 @@ export const ForgotPasswordForm: React.FC<ForgotPasswordFormProps> = ({
             <p className="notice notice-negative" role="alert" style={{ fontSize: '0.78rem' }}>{passwordError}</p>
           )}
 
-          <div id="reset-password-rules">
-            <PasswordStrengthMeter password={newPassword} />
-          </div>
+          <p id="reset-password-rules" className="password-hint">
+            At least 8 characters, with upper-case, lower-case and a number
+          </p>
 
           <div style={{ display: 'flex', gap: '8px' }}>
             <button

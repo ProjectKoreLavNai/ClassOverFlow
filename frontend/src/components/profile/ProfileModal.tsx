@@ -225,11 +225,11 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
           >
             <label className="field">
               <span className="field-label">Full name</span>
-              <input className="input" value={fullName} onChange={(event) => setFullName(event.target.value)} required maxLength={100} />
+              <input className="input" value={fullName} onChange={(event) => setFullName(event.target.value)} required />
             </label>
             <label className="field">
               <span className="field-label">Username</span>
-              <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} required minLength={3} maxLength={50} />
+              <input className="input" value={username} onChange={(event) => setUsername(event.target.value)} required />
             </label>
             <label className="field">
               <span className="field-label">Email (cannot be changed)</span>
@@ -238,7 +238,7 @@ export const ProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
             {session.role !== 'admin' && (
               <label className="field">
                 <span className="field-label">Phone</span>
-                <input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={20} />
+                <input className="input" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} />
               </label>
             )}
           </form>

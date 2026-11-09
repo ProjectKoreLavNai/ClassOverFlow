@@ -110,10 +110,6 @@ export const MarksDistributionModal: React.FC<Props> = ({
   };
 
   const handleRemoveItem = (index: number) => {
-    if (items.length <= 1) {
-      setError('At least one assessment category is required.');
-      return;
-    }
     setItems((prev) => prev.filter((_, i) => i !== index));
     setError(null);
   };
@@ -127,30 +123,11 @@ export const MarksDistributionModal: React.FC<Props> = ({
     e.preventDefault();
     setError(null);
 
-    // Validation
-    const cleanItems: MarksDistributionItem[] = [];
-    const seenNames = new Set<string>();
-
-    for (const item of items) {
-      const trimmedName = item.name.trim();
-      if (!trimmedName) {
-        setError('Assessment category name cannot be empty.');
-        return;
-      }
-      const lower = trimmedName.toLowerCase();
-      if (seenNames.has(lower)) {
-        setError(`Duplicate assessment name: "${trimmedName}". Names must be unique.`);
-        return;
-      }
-      seenNames.add(lower);
-
-      const markVal = Number(item.total_marks);
-      if (isNaN(markVal) || markVal <= 0) {
-        setError(`Total marks for "${trimmedName}" must be greater than 0.`);
-        return;
-      }
-      cleanItems.push({ name: trimmedName, total_marks: markVal });
-    }
+    // Empty, duplicate and out-of-range categories are rejected by the backend.
+    const cleanItems: MarksDistributionItem[] = items.map((item) => ({
+      name: item.name.trim(),
+      total_marks: Number(item.total_marks),
+    }));
 
     setIsSaving(true);
     try {
@@ -257,7 +234,6 @@ export const MarksDistributionModal: React.FC<Props> = ({
                     type="text"
                     value={item.name}
                     placeholder="Assessment name (e.g. CT, Final)"
-                    maxLength={150}
                     onChange={(e) => handleItemChange(index, 'name', e.target.value)}
                     aria-label={`Assessment name ${index + 1}`}
                     required
@@ -270,8 +246,6 @@ export const MarksDistributionModal: React.FC<Props> = ({
                       className="input num"
                       type="number"
                       step="0.5"
-                      min="0.5"
-                      max="100"
                       value={item.total_marks || ''}
                       onChange={(e) => handleItemChange(index, 'total_marks', e.target.value)}
                       aria-label={`Total marks for ${item.name}`}
@@ -299,10 +273,8 @@ export const MarksDistributionModal: React.FC<Props> = ({
                     className="btn btn-ghost btn-sm btn-icon"
                     onClick={() => handleRemoveItem(index)}
                     title="Remove assessment"
-                    disabled={items.length <= 1}
                     style={{
-                      color: items.length > 1 ? 'var(--negative)' : 'var(--muted)',
-                      opacity: items.length <= 1 ? 0.35 : 1,
+                      color: 'var(--negative)',
                       width: '32px',
                       height: '32px',
                     }}

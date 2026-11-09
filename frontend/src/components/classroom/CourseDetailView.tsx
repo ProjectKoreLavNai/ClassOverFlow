@@ -247,26 +247,6 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
   const getMarkValue = (studentId: number, name: string, mark?: BackendMark) =>
     markDrafts[`${studentId}:${name}`] ?? (mark ? String(mark.marks_obtained) : '');
 
-  // Check constraint helper: Validate against negative marks and exceeding constrained bounds
-  const getMarkValidationError = (value: string, max: number): string | null => {
-    if (!value || value.trim() === '') return null;
-    const num = Number(value);
-    if (!Number.isFinite(num)) return 'Invalid number';
-    if (num < 0) return 'Cannot be negative';
-    if (num > max) return `Exceeds max (${max})`;
-    return null;
-  };
-
-  const hasInvalidMarks = Object.entries(markDrafts).some(([key, val]) => {
-    if (!val || val.trim() === '') return false;
-    const parts = key.split(':');
-    const assessmentName = parts.slice(1).join(':');
-    const dist = activeDistribution.find((d) => d.name.toLowerCase() === assessmentName.toLowerCase());
-    const max = dist ? dist.total_marks : 100;
-    const num = Number(val);
-    return !Number.isFinite(num) || num < 0 || num > max;
-  });
-
   // AI insights card state in gradebook
   const [showAIInsights, setShowAIInsights] = useState(false);
 
@@ -611,16 +591,8 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
             if (mark) deleteMarkIds.push(mark.mark_id);
             continue;
           }
+          // Negative marks and marks above the category total are rejected by the backend.
           const obtained = Number(draft);
-          if (!Number.isFinite(obtained)) {
-            throw new Error(`Invalid mark for ${assessment.name}`);
-          }
-          if (obtained < 0) {
-            throw new Error(`${assessment.name} marks cannot be negative.`);
-          }
-          if (obtained > assessment.total_marks) {
-            throw new Error(`${assessment.name} mark (${obtained}) cannot exceed ${assessment.total_marks}.`);
-          }
           if (!mark || Number(mark.marks_obtained) !== obtained || Number(mark.total_marks) !== assessment.total_marks) {
             marksToSave.push({
               ...(mark ? { mark_id: mark.mark_id } : {}),
@@ -981,7 +953,6 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                         className="input"
                         value={editingAnnouncementTitle}
                         onChange={(event) => setEditingAnnouncementTitle(event.target.value)}
-                        maxLength={200}
                         required
                       />
                     </label>
@@ -1372,7 +1343,6 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                           className="input num"
                           type="date"
                           value={attendanceDate}
-                          max={todayDate}
                           onChange={(event) => {
                             setAttendanceDate(event.target.value);
                             setAttendanceFeedback(null);
@@ -1564,8 +1534,7 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                   <button
                     className="btn btn-primary btn-sm"
                     onClick={() => void handleSaveGradebook()}
-                    disabled={isSavingGradebook || !gradebook || hasInvalidMarks}
-                    title={hasInvalidMarks ? 'Cannot save: some marks exceed the allowed range' : undefined}
+                    disabled={isSavingGradebook || !gradebook}
                   >
                     {isSavingGradebook ? 'Saving…' : 'Save marks'}
                   </button>
@@ -1575,11 +1544,6 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
           </div>
           {dataError && <p className="notice notice-negative" role="alert">{dataError}</p>}
           {gradebookFeedback && <p className="notice" role="status">{gradebookFeedback}</p>}
-          {hasInvalidMarks && (
-            <p className="notice notice-negative" role="alert" style={{ marginBottom: '10px' }}>
-              One or more marks are negative or exceed the category maximum. Fix invalid inputs before saving.
-            </p>
-          )}
 
           {/* AI summary, built from the same rows as the table */}
           {showAIInsights && (
@@ -1676,33 +1640,23 @@ export const CourseDetailView: React.FC<Props> = ({ course, onBack, onCourseUpda
                             {nonAttDistribution.map((item) => {
                               const mark = getStudentMark(student.marks, item.name);
                               const rawVal = getMarkValue(student.student_id, item.name, mark);
-                              const draftVal = markDrafts[`${student.student_id}:${item.name}`];
-                              const valErr = draftVal !== undefined ? getMarkValidationError(draftVal, item.total_marks) : null;
 
                               return (
                                 <td className="num" key={item.name}>
                                   {session?.canEditGrades() ? (
                                     <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                                       <input
-                                        className={`input${valErr ? ' is-invalid' : ''}`}
+                                        className="input"
                                         type="number"
-                                        min="0"
-                                        max={item.total_marks}
-                                        step="0.01"
+                                        step="any"
                                         value={rawVal}
-                                        style={valErr ? { borderColor: 'var(--negative)', backgroundColor: 'var(--pill-negative-bg)' } : undefined}
                                         onChange={(event) => setMarkDrafts((current) => ({
                                           ...current,
                                           [`${student.student_id}:${item.name}`]: event.target.value,
                                         }))}
                                         aria-label={`${item.name} marks for ${student.full_name}`}
-                                        title={valErr || `Max: ${item.total_marks}`}
+                                        title={`Out of ${item.total_marks}`}
                                       />
-                                      {valErr && (
-                                        <span style={{ fontSize: '0.68rem', color: 'var(--negative)', marginTop: '2px', whiteSpace: 'nowrap' }}>
-                                          {valErr}
-                                        </span>
-                                      )}
                                     </div>
                                   ) : mark ? `${mark.marks_obtained}/${item.total_marks}` : '–'}
                                 </td>
