@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
-import { AdminUserManagement } from '../admin/AdminUserManagement';
 import api, { type BackendCourse } from '../../services/api';
 
-export const AdminConsoleView: React.FC = () => {
+export const AdminCoursesView: React.FC = () => {
   const [courses, setCourses] = useState<BackendCourse[]>([]);
   const [courseError, setCourseError] = useState<string | null>(null);
 
@@ -34,17 +33,12 @@ export const AdminConsoleView: React.FC = () => {
     <div className="page">
       <div className="page-head">
         <div>
-          <h1 className="page-title">Admin console</h1>
-          <p className="page-sub">Verify accounts, change roles and retire old courses</p>
+          <h1 className="page-title">Course management</h1>
+          <p className="page-sub">Review every course and retire old ones</p>
         </div>
       </div>
 
       <div className="stack">
-
-        {/* User Account Verification & Role Assignment Table */}
-        <AdminUserManagement />
-
-        {/* Course Governance Safeguards */}
         <section className="panel" aria-labelledby="courses-title">
           <div className="panel-head" style={{ marginBottom: '4px' }}>
             <h2 id="courses-title" className="panel-title">Courses</h2>
@@ -75,7 +69,6 @@ export const AdminConsoleView: React.FC = () => {
             ))}
           </ul>
         </section>
-
       </div>
     </div>
   );

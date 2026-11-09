@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, CheckSquare, Megaphone, ShieldCheck } from 'lucide-react';
+import { BookOpen, CheckSquare, Library, Megaphone, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { SecurityBouncerProxy } from '../../patterns/proxy';
 import { ClassroomAcademicFacade } from '../../patterns/facade/ClassroomAcademicFacade';
@@ -65,9 +65,15 @@ export const Sidebar: React.FC<Props> = ({ activeTab, onSelectTab, isOpen, activ
       allowed: session ? session.canAccessCRDesk() : false
     },
     {
-      id: 'admin',
-      label: 'Admin console',
-      icon: ShieldCheck,
+      id: 'admin-accounts',
+      label: 'Accounts',
+      icon: Users,
+      allowed: session ? session.canAccessAdmin() : false
+    },
+    {
+      id: 'admin-courses',
+      label: 'Courses',
+      icon: Library,
       allowed: session ? session.canAccessAdmin() : false
     },
   ];

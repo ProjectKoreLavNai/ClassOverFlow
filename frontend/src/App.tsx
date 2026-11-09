@@ -7,7 +7,8 @@ import { ForbiddenModal } from './components/security/ForbiddenModal';
 import { ClassroomsHome } from './components/views/ClassroomsHome';
 import { CRDeskView } from './components/views/CRDeskView';
 import { StudentTodoView } from './components/views/StudentTodoView';
-import { AdminConsoleView } from './components/views/AdminConsoleView';
+import { AdminAccountsView } from './components/views/AdminAccountsView';
+import { AdminCoursesView } from './components/views/AdminCoursesView';
 import { AIStudioView } from './components/views/AIStudioView';
 
 const MainApplication: React.FC = () => {
@@ -46,7 +47,7 @@ const MainApplication: React.FC = () => {
     <div className="app">
       {/* Top bar: product mark and scope, the account, sign out; the menu button on a phone */}
       <TopBar
-        onNavigateHome={() => selectTab(session?.role === 'admin' ? 'admin' : 'classrooms')}
+        onNavigateHome={() => selectTab(session.getLandingRoute())}
         isNavOpen={isNavOpen}
         onToggleNav={() => setIsNavOpen((open) => !open)}
       />
@@ -66,7 +67,8 @@ const MainApplication: React.FC = () => {
           {activeTab === 'classrooms' && <ClassroomsHome selectedCode={openCourseCode} onSelectCode={selectCourseCode} />}
           {activeTab === 'todo' && <StudentTodoView />}
           {activeTab === 'crdesk' && <CRDeskView />}
-          {activeTab === 'admin' && <AdminConsoleView />}
+          {activeTab === 'admin-accounts' && <AdminAccountsView />}
+          {activeTab === 'admin-courses' && <AdminCoursesView />}
           {activeTab === 'aistudio' && <AIStudioView />}
         </main>
       </div>

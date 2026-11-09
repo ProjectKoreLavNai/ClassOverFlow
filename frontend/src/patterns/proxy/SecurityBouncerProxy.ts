@@ -11,6 +11,9 @@ export interface SecurityCheckResult {
   violation?: SecurityViolation;
 }
 
+/** Sidebar tabs that make up the admin console: account handling and course handling. */
+const ADMIN_TABS = ['admin-accounts', 'admin-courses'];
+
 /**
  * Proxy Pattern: Security Bouncer / RBAC Enforcement
  * Structural Pattern: Sits directly in front of view routing and academic action dispatchers.
@@ -33,9 +36,11 @@ export class SecurityBouncerProxy {
       };
     }
 
+    const isAdminTab = ADMIN_TABS.includes(targetTab);
+
     // Role-Based Access Control Rules
     // Platform Administrator can ONLY access administrative pages
-    if (session.role === 'admin' && targetTab !== 'admin') {
+    if (session.role === 'admin' && !isAdminTab) {
       return {
         allowed: false,
         violation: {
@@ -46,7 +51,7 @@ export class SecurityBouncerProxy {
       };
     }
 
-    if (targetTab === 'admin' && !session.canAccessAdmin()) {
+    if (isAdminTab && !session.canAccessAdmin()) {
       return {
         allowed: false,
         violation: {

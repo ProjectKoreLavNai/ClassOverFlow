@@ -125,7 +125,7 @@ export class AdminSession extends UserSession {
     return 'Platform Administrator & Registrar';
   }
   public override getLandingRoute(): string {
-    return 'admin';
+    return 'admin-accounts';
   }
 
   // Administrator privileges restricted exclusively to institutional admin pages
